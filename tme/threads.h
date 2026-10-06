@@ -41,8 +41,8 @@ _TME_RCSID("$Id: threads.h,v 1.10 2010/06/05 19:36:35 fredette Exp $");
 
 /* includes: */
 #include <errno.h>
-#include <tme/libopenvpn/syshead.h>
-#include <tme/libopenvpn/event.h>
+#include <fcntl.h>
+#include <tme/event.h>
 
 /* setjmp/longjmp threading: */
 #ifdef TME_THREADS_POSIX
@@ -83,91 +83,6 @@ static _tme_inline int tme_thread_sleep_yield _TME_P((tme_time_t time, tme_mutex
 }
 
 /* I/O: */
-#ifdef WIN32
-/* file flags: */
-#define TME_FILE_RO		GENERIC_READ
-#define TME_FILE_WO		GENERIC_WRITE
-#define TME_FILE_RW		GENERIC_READ | GENERIC_WRITE
-#define TME_FILE_NB		0
-
-#ifdef TME_HAVE_INT64_T
-typedef tme_int64_t tme_off_t;
-#else
-#error "No support for 32-bit file offsets on Windows"
-#endif
-
-typedef struct tme_win32_handle *tme_event_t;
-#define TME_INVALID_EVENT NULL
-
-#define TME_WIN32_HANDLE(hand) (*(HANDLE *)(hand))
-
-extern tme_event_t win32_stdin;
-extern tme_event_t win32_stdout;
-extern tme_event_t win32_stderr;
-tme_event_t tme_win32_open _TME_P((const char *path, int flags, int attr, size_t size));
-void tme_win32_close _TME_P((tme_event_t));
-
-static _tme_inline ssize_t tme_read _TME_P((HANDLE hand, void *buf, size_t len)) {
-  int ret;
-  return (ReadFile(hand, buf, len, &ret, NULL)) ? (ret) : (-1);
-}
-
-static _tme_inline ssize_t tme_write _TME_P((HANDLE hand, const void *buf, size_t len)) {
-  int ret;
-  return (WriteFile(hand, buf, len, &ret, NULL)) ? (ret) : (-1);
-}
-
-#define tme_fd(hand, flags) _open_osfhandle((intptr_t)hand, flags);
-#define TME_SEEK_SET FILE_BEGIN
-#define TME_SEEK_CUR FILE_CURRENT
-#define TME_SEEK_END FILE_END
-
-#define TME_STD_HANDLE(hand) win32_##hand
-
-#ifdef TME_THREADS_SJLJ
-
-typedef tme_event_t tme_thread_handle_t;
-#define TME_STD_THREAD_HANDLE TME_STD_HANDLE
-#define TME_STD_EVENT_HANDLE TME_STD_HANDLE
-#define TME_THREAD_HANDLE TME_WIN32_HANDLE
-#define TME_EVENT_HANDLE TME_THREAD_HANDLE
-#define TME_INVALID_HANDLE NULL
-#define tme_thread_open(path, flags) tme_win32_open(path, flags, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED, 0)
-#define tme_event_open(path, flags) tme_win32_open(path, flags, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED, 1024)
-#define tme_thread_close tme_win32_close
-#define tme_event_close tme_thread_close
-tme_off_t tme_thread_seek _TME_P((tme_thread_handle_t hand, tme_off_t off, int where));
-
-#else /* TME_THREADS_SJLJ */
-
-#define TME_THREADS_DIRECTIO
-#define TME_STD_THREAD_HANDLE(hand) TME_WIN32_HANDLE(win32_##hand)
-#define TME_STD_EVENT_HANDLE TME_STD_HANDLE
-#define TME_EVENT_HANDLE TME_WIN32_HANDLE
-#define TME_THREAD_HANDLE(hand) hand
-#define TME_INVALID_HANDLE INVALID_HANDLE_VALUE
-typedef HANDLE tme_thread_handle_t;
-
-#define tme_thread_open(path,flags)		\
-  CreateFile(path, \
-	     flags, \
-	     0, /* was: FILE_SHARE_READ */ \
-	     0, \
-	     OPEN_EXISTING, \
-	     FILE_ATTRIBUTE_NORMAL, \
-	     0)
-#define tme_thread_close CloseHandle
-#define tme_event_open(path, flags) tme_win32_open(path, flags, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED, 1024)
-#define tme_event_close tme_win32_close
-static _tme_inline tme_off_t tme_thread_seek _TME_P((tme_thread_handle_t hand, tme_off_t off, int where)) {
-  LARGE_INTEGER ret;
-
-  return (SetFilePointerEx(hand, (LARGE_INTEGER)off, &ret, where)) ? (ret.QuadPart) : (-1);
-}
-
-#endif /* !TME_THREADS_SJLJ */
-
-#else /* WIN32 */
 /* file flags: */
 #define TME_FILE_RO		O_RDONLY
 #define TME_FILE_WO		O_WRONLY
@@ -194,7 +109,6 @@ typedef off_t tme_off_t;
 #define tme_thread_close close
 #define tme_event_open open
 #define tme_event_close close
-#endif
 
 #define tme_thread_fd(hand,flags) tme_fd(TME_THREAD_HANDLE(hand), flags)
 

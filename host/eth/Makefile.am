@@ -12,4 +12,4 @@ libtme_eth_la_LIBADD = $(top_builddir)/generic/libtme-generic.la
 include $(top_srcdir)/modules
 
 SUBDIRS = . @TME_ETH_HOSTS@
-DIST_SUBDIRS = bsd tun openvpn
+DIST_SUBDIRS = bsd tun udp

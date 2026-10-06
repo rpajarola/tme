@@ -35,6 +35,7 @@
 
 /* includes: */
 #include "display.h"
+#include <stdio.h>
 
 struct tme_display *(*_tme_display_get) _TME_P((void *));
 

@@ -211,4 +211,6 @@ int tme_eth_init _TME_P((struct tme_element *element,
 			 void *data,
 			 unsigned char *addr));
 
+void tme_eth_start _TME_P((struct tme_ethernet *eth));
+
 #endif /* !_HOST_ETH_IMPL_H */

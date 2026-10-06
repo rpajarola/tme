@@ -418,6 +418,7 @@ tme_sjlj_threads_main_iter(void *unused)
   int fd;
   struct timeval timeout;
   int rc;
+  tme_time_t now;
   struct event_set_return esr[64];
   
   /* make the select timeout: */
@@ -451,7 +452,7 @@ tme_sjlj_threads_main_iter(void *unused)
   }
   
   rc = (tme_sjlj_main_events->max_event >= 0) ?
-    (event_wait(tme_sjlj_main_events->es, &timeout, esr, SIZE(esr))) :
+    (event_wait(tme_sjlj_main_events->es, &timeout, esr, TME_ARRAY_ELS(esr))) :
     (tme_sjlj_main_events->max_event);
   
   /* we were in select() for an unknown amount of time: */

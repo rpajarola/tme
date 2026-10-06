@@ -912,6 +912,12 @@ tme_eth_connections_new(struct tme_element *element,
   return (TME_OK);
 }
 
+/* this starts the reader thread: */
+void tme_eth_start(struct tme_ethernet *eth)
+{
+  tme_thread_create(&eth->tme_eth_thread, (tme_thread_t) _tme_eth_th_reader, eth);
+}
+
 int tme_eth_init(struct tme_element *element, 
 		 tme_thread_handle_t hand,
 		 unsigned int sz, 
@@ -935,10 +941,12 @@ int tme_eth_init(struct tme_element *element,
   eth->tme_eth_addr = addr;
   eth->tme_eth_callout_flags = TME_ETH_CALLOUT_CONFIG;
   
-  /* start the threads: */
+  /* start the threads.  without a handle, the caller must set its
+     callbacks and buffers first, and then call tme_eth_start: */
   tme_mutex_init(&eth->tme_eth_mutex);
   tme_cond_init(&eth->tme_eth_cond_reader);
-  tme_thread_create(&eth->tme_eth_thread, (tme_thread_t) _tme_eth_th_reader, eth);
+  if(hand != TME_INVALID_HANDLE)
+    tme_eth_start(eth);
 
   /* fill the element: */
   element->tme_element_private = eth;

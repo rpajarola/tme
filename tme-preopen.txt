@@ -26,7 +26,7 @@ LDADD = \
 	-dlopen ../host/display/gtk/tme_host_gtk.la \
 	-dlopen ../host/eth/bsd/tme_host_bsd.la \
 	-dlopen ../host/eth/tun/tme_host_tun.la \
-	-dlopen ../host/eth/openvpn/tme_host_openvpn.la \
+	-dlopen ../host/eth/udp/tme_host_udp.la \
 	-dlopen ../host/tme_host_posix.la \
 	-dlopen ../bus/multibus/tme_bus_multibus.la \
 	-dlopen ../bus/sbus/tme_bus_sbus.la \

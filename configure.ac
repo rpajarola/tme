@@ -96,12 +96,7 @@ linux*)
 #   SETCAP="setcap cap_sys_nice,cap_net_admin,cap_net_raw+ep"
    ;;
 mingw* | msys*)
-   AC_DEFINE([TARGET_WIN32], [1], [Are we running WIN32?])
-   AC_DEFINE_UNQUOTED([TARGET_PREFIX], ["W"], [Target prefix])
-   CPPFLAGS="${CPPFLAGS} -DWIN32_LEAN_AND_MEAN"
-   CPPFLAGS="${CPPFLAGS} -DNTDDI_VERSION=NTDDI_WINXP -D_WIN32_WINNT=_WIN32_WINNT_WINXP"
-   WIN32=yes
-   SETCAP="chmod u+s"
+   AC_MSG_ERROR([native Windows is not supported; build under Cygwin instead])
    ;;
 cygwin*)   
    WIN32=cygwin
@@ -575,16 +570,6 @@ else
 	AC_DEFINE_UNQUOTED([PATH_SEPARATOR_STR], ["/"], [Path separator])
 fi
 
-TAP_WIN_COMPONENT_ID="PRODUCT_TAP_WIN_COMPONENT_ID"
-TAP_WIN_MIN_MAJOR="PRODUCT_TAP_WIN_MIN_MAJOR"
-TAP_WIN_MIN_MINOR="PRODUCT_TAP_WIN_MIN_MINOR"
-AC_DEFINE_UNQUOTED([TAP_WIN_COMPONENT_ID], ["${TAP_WIN_COMPONENT_ID}"], [The tap-windows id])
-AC_DEFINE_UNQUOTED([TAP_WIN_MIN_MAJOR], [${TAP_WIN_MIN_MAJOR}], [The tap-windows version number is required for OpenVPN])
-AC_DEFINE_UNQUOTED([TAP_WIN_MIN_MINOR], [${TAP_WIN_MIN_MINOR}], [The tap-windows version number is required for OpenVPN])
-AC_SUBST([TAP_WIN_COMPONENT_ID])
-AC_SUBST([TAP_WIN_MIN_MAJOR])
-AC_SUBST([TAP_WIN_MIN_MINOR])
-
 AC_CHECK_FUNC_LONG(__builtin_bswap16, [
   unsigned int x;
 
@@ -748,7 +733,6 @@ AC_CHECK_HEADERS(
 	[ \
 		net/if_tun.h net/tun/if_tun.h \
 		linux/if_tun.h \
-		tap-windows.h \
 	],
 	[have_tap_header="yes"]
 )
@@ -782,7 +766,7 @@ AC_ARG_WITH(tme-host-displays,
 
 AC_SUBST(TME_FB_XLAT_DST)
 
-tme_host_types="gtk rfb sdl tun bsd openvpn"
+tme_host_types="gtk rfb sdl tun bsd udp"
 
 for tme_host_type in ${tme_host_types}; do
     eval enable_${tme_host_type}=no
@@ -829,11 +813,8 @@ AC_MSG_RESULT($TME_DISPLAY_HOSTS)
 dnl Start the list of ethernet host support.
 TME_ETH_HOSTS=
 
-AM_CONDITIONAL([USE_TAP_WINDOWS], [test "x${enable_openvpn}" = xyes && test "x${have_tap_header}" = x && test "x${WIN32}" != x])
-AM_CONDITIONAL([USING_OPENVPN], [test "x${enable_openvpn}" = xyes && test "x${have_tap_header}" = xyes || test "x${WIN32}" != x])
-if test "x${enable_openvpn}" = xyes && test "x${have_tap_header}" = xyes || test "x${WIN32}" != x; then
-   TME_ETH_HOSTS="openvpn ${TME_ETH_HOSTS}"
-   AC_DEFINE([OPENVPN_VERSION_RESOURCE], [PRODUCT_VERSION_RESOURCE], [Version in windows resource format])
+if test "x${enable_udp}" = xyes && test "x${ac_cv_header_sys_socket_h}" = xyes; then
+   TME_ETH_HOSTS="udp ${TME_ETH_HOSTS}"
 fi
 
 AC_CHECK_HEADERS([linux/if_tun.h net/if_tap.h net/tap/if_tap.h net/if_tun.h],
@@ -1579,10 +1560,8 @@ AC_CONFIG_FILES([Makefile
 	  tme/scsi/Makefile
 	  tme/host/Makefile
 	  tme/bus/Makefile
-	  tme/libopenvpn/Makefile
           lib/Makefile
 	  libltdl/Makefile
-	  libopenvpn/Makefile
 	  libtme/Makefile
 	  libtme/host/Makefile
 	  libtme/host/x86/Makefile
@@ -1603,7 +1582,7 @@ AC_CONFIG_FILES([Makefile
           host/display/rfb/Makefile
           host/display/sdl/Makefile
           host/eth/Makefile
-          host/eth/openvpn/Makefile
+          host/eth/udp/Makefile
           host/eth/bsd/Makefile
           host/eth/tun/Makefile
           bus/Makefile

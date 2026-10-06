@@ -25,6 +25,7 @@ libtme_la_SOURCES = misc-host.c \
 	recode-host.c \
 	recode-impl.h \
 	module.c \
+	event.c \
 	threads.c \
 	element.c \
 	log.c \
@@ -38,9 +39,6 @@ libtme_la_SOURCES += threads-sjlj.c
 endif
 libtme_la_LDFLAGS = -version-info 0:0:0
 libtme_la_LIBADD = $(LIBLTDL) $(LTLIBOBJS)
-if USING_OPENVPN
-libtme_la_LIBADD += $(top_builddir)/libopenvpn/libopenvpn.la
-endif
 if THREADS_GLIB
 libtme_la_LIBADD += $(GLIB_LIBS)
 endif

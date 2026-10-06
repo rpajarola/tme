@@ -97,7 +97,7 @@ Networking
 * PPP::
 * IPv4 Network Address Translation::
 * Proxy ARP/NDP::
-* OpenVPN::
+* Ethernet over UDP::
 * Network Descriptions::
 * Network Services::
 
@@ -232,10 +232,8 @@ for Ethernet access.
 @item
 Windows - Preliminary support for building/running on Windows
 platforms is provided through Cygwin. It should work out of the
-box. See below for details. It should also build (natively or cross)
-on MinGW, and run under the Wine emulator (use --without-x
---enable-threads=glib configure options). Preliminary Ethernet support is
-available for Windows, using OpenVPN.
+box. See below for details. Native (MinGW) builds are no longer
+supported. Ethernet over UDP works on Cygwin.
 
 @item
 Other - It should work on any POSIX platforms, sans whatever features
@@ -541,7 +539,7 @@ is the topic of the next section.
 * PPP::
 * IPv4 Network Address Translation::
 * Proxy ARP/NDP::
-* OpenVPN::
+* Ethernet over UDP::
 * Network Descriptions::
 * Network Services::
 @end menu
@@ -903,130 +901,68 @@ apply, with commands used for IPv6 instead (ip -6). If your router
 doesn't have a route to your host, this may be needed to use IPv6
 networking.
 
-@node OpenVPN
-@subsection OpenVPN
+@node Ethernet over UDP
+@subsection Ethernet over UDP
 
-TME networking capabilities are expanded using the OpenVPN tools.  These
-come included with TME to provide alternate methods for network access,
-besides the built-in BPF and TAP.  One advantage of using these is that,
-in some cases, they allow for greater portability to platforms that
-don't have native BPF or TAP.  Another pro is that OpenVPN provides
-value-added capabilities such as encryption, fragmentation, compression,
-virtual networking, and scripting.  These can be used to greatly
-expand the domain of application to larger systems.  There is an
-ongoing effort to bring in more of this functionality over time.
+The UDP element carries Ethernet frames over UDP, so that machines can
+be networked with each other, and with other emulators, across any IP
+network, without TAP or BPF devices and without special privileges.
+Each UDP datagram carries exactly one raw Ethernet frame, with no
+header and no checksum.  This is the format of Johnny Billquist's
+HECnet bridge, and the same format that simh (@code{attach xq udp:...})
+and QEMU (@code{-netdev dgram}) use, so TME can exchange frames with
+all of them.
 
-To begin with, some OpenVPN capability has been imported using modules
-that map to certain elements in the OpenVPN program.  In particular,
-TUN/TAP devices and link sockets are two new TME elements that
-can be used to network machines and hosts.  The elements can
-be thought of as subsets of OpenVPN itself, with the capabilities
-specified using the same command-line options that it provides.
-Some will work and some won't, depending on what has been implemented,
-and what is needed for that element.
+An element listens on a UDP address, and sends frames to its peers:
 
-The following sections outline these methods.
+@code{udp0 at le0: tme/host/udp/eth listen 127.0.0.1 4711 peer 127.0.0.1 4712}
 
-@menu
-* OpenVPN TUN/TAP Devices::
-* OpenVPN Socket Link Devices::
-@end menu
+@table @code
+@item listen @var{address} @var{port}
+The UDP address to receive frames on.  The default is an ephemeral
+port on 127.0.0.1, which is only useful with fixed peers on the same
+host.
 
-@node OpenVPN TUN/TAP Devices
-@subsubsection OpenVPN TUN/TAP Devices
+@item peer @var{address} @var{port}
+A peer that always receives frames.  This can be repeated.
+@end table
 
-Preliminary support for OpenVPN is now provided for the purposes of
-creating and using TAP devices on multiple platforms.  OpenVPN is
-compiled in as another host module, with a special tap leaf interface,
-that uses the same options as OpenVPN itself.  See the OpenVPN docs
-for further information.
+Addresses can also be given as one quoted argument, as
+@code{"@var{address}:@var{port}"}, or as @code{"[@var{address}]:@var{port}"}
+for an IPv6 address, since tmesh only allows colons and brackets inside
+quotes.
 
-In particular, it can be used to configure tap interfaces with IP
-or IPv6 addresses.  It can also be used to run postconfiguration scripts
-that can, e.g., set up NAT using the filter rules appropriate to the
-platform.  Here is a sample line that can be used to accomplish
-these:
+Besides the fixed peers, any address that sends the element a frame
+becomes a peer until it has been quiet for 180 seconds, the same timeout
+as the HECnet bridge uses for passive peers.  So simh, QEMU or another
+TME can point at a TME without being configured there.  Unicast frames
+go only to the peer that last sent a frame from the destination
+address, as a learning switch would; broadcast, multicast and unknown
+destinations go to every peer.  The element is an endpoint: it does not
+pass frames from one peer to another.
 
-@code{tap0 at le0: tme/host/openvpn/tap --dev tap --ifconfig 10.0.77.1 255.255.255.0 --ifconfig-ipv6 "2001:db8::1/64" "2001:db8::2" --tun-ipv6 --up nat.sh}
+Frames shorter than the Ethernet minimum are padded, and datagrams
+that can't be Ethernet frames are dropped.  Like Ethernet, there are no
+delivery guarantees.  There is no authentication or privacy either:
+anyone who can send datagrams to the listening port can put frames on
+the network and receive its broadcasts, so prefer loopback addresses,
+and a warning is logged for any other.
 
-Note that this is currently the only way to get networking support
-under Windows.  
-
-@node OpenVPN Socket Link Devices
-@subsubsection OpenVPN Socket Link Devices
-
-OpenVPN provides network links via sockets, for the purposes of creating
-private networks over existing L3 networks, using IP protocols.  We
-use this to expand ethernet networking capability with P2P links between
-network elements of machines on different host machines or networks.  These
-links are also known as tunnels because they can be used to make virtual
-networks through physical networks.
-
-The usage is quite simple:  network elements are connected to link elements
-in the same fashion as they are connected to other devices.  You can think
-of them as virtual ethernet or TAP devices.  The link elements are paired
-together, and can be in the same or other machine configurations to provide
-a bridge for the ethernet traffic to flow between them.
-
-Link elements are paired by IP address.  They are implemented using sockets,
-so they have a local and remote address.  The local address must be specified;
-the remote may be specified or floating.  The encapsulating protocol may be
-specified as UDP (stateless) or TCP (session-oriented).  In the latter case,
-both machines must be running and connected for either to proceed.
-
-The sample machine configurations provide examples of different scenarios where
-they might be used.  The simplest is a peer-to-peer connection between two
-machines (or even two elements theoretically).  This demonstrates the extreme
-flexibility of TME in specifying different network configurations over other
-networks which might not have the needed resources or topology.  In particular,
-TAP devices aren't available on every platform (ex: Cygwin).  You can bridge
-between a platform that doesn't and one that does to give external network
-access.  Once again, the possibilities are limited only by the firewalls.  You
-can also use proxies to overcome this (not yet implemented, but coming soon),
-or customize the firewall rules.
-
-Here is the peer-to-peer connection specification:
+Here is a peer-to-peer connection between two machines on different
+hosts:
 
 Machine A -
-@code{link0 at le0: tme/host/openvpn/socket/link --dev tap --local 192.168.0.1 --remote 192.168.0.2}
+@code{link0 at le0: tme/host/udp/eth listen 192.168.0.1 4711 peer 192.168.0.2 4711}
 
 Machine B -
-@code{link1 at le0: tme/host/openvpn/socket/link --dev tap --local 192.168.0.2 --remote 192.168.0.1}
+@code{link1 at le0: tme/host/udp/eth listen 192.168.0.2 4711 peer 192.168.0.1 4711}
 
-This creates a network of two machines, but no external access.
+Since peers are learned, only one side needs to name the other.  A UDP
+element can also be connected to a TAP or BPF element, to bridge
+remote machines onto a host network:
 
-Here's a network description that allows for two remote machines, each on different hosts, to be connected to
-two local machines, networked using the BPF/TAP combo, and connected externally via AutoNAT.
-
-Host 1:
-Machine A -
 @code{tap1: tme/host/tun/tap inet 10.0.77.1 netmask 255.255.255.0 bcast 10.0.77.255}
-@code{link2 at tap1: tme/host/openvpn/socket/link --dev tap --local 192.168.0.1 --remote 192.168.0.2 --proto tcp-server}
-@code{bpf1 at le0: tme/host/bsd/bpf interface tap0}
-
-Machine B -
-@code{link3: tme/host/openvpn/socket/link --dev tap --local 192.168.0.1 --lport 1195 --remote 192.168.0.3}
-@code{bpf1 at le0: tme/host/bsd/bpf interface tap0}
-@code{bpf2 at link3: tme/host/bsd/bpf interface tap0}
-
-Host 2:
-Machine B -
-@code{link4 at le0: tme/host/openvpn/socket/link --dev tap --local 192.168.0.2 --remote 192.168.0.1 --proto tcp-client}
-
-Machine D -
-@code{link5 at le0: tme/host/openvpn/socket/link --dev tap --local 192.168.0.3 --remote 192.168.0.1 1195}
-
-To avoid confusion, element names in the samples are unique, but the actual names of elements are unimportant,
-so long as they are unique within a single machine configuration.  Also, when connecting more than one link,
-different ports must be used (or the addresses must otherwise be unique, perhaps using different interfaces).
-OpenVPN allows for shared ports, but it hasn't been tested yet.  The default protocol is UDP, but TCP can be
-used as well, using the --proto argument to the openvpn element as shown above.
-
-As you can tell, this can get pretty complicated.  The following section is a discussion of the BPF/TAP
-network bridge, for making a local network on the host.  The capabilities and documentation will continue
-to improve, but TME is a great platform for experimentation.  Perhaps, there are other configurations
-that have yet to be thought of... or better ways of accomplishing these tasks.  There are no correct methods,
-but these idioms are a good starting point.
+@code{link2 at tap1: tme/host/udp/eth listen 192.168.0.1 4711}
 
 @node Network Descriptions
 @subsection Network Descriptions
