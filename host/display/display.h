@@ -194,15 +194,19 @@ struct tme_screen *_tme_screen_add _TME_P((struct tme_display *,
 void _tme_screen_scale_set _TME_P((struct tme_screen *screen,
 				   int scale_new));
 void _tme_screen_xlat_set _TME_P((struct tme_screen *screen));
+int _tme_screen_configure _TME_P((struct tme_screen *screen));
+int tme_display_init _TME_P((struct tme_element *, struct tme_display *));
 void _tme_keyboard_new _TME_P((struct tme_display *));
 int _tme_keyboard_connections_new _TME_P((struct tme_display *,
 					  struct tme_connection **));
 int _tme_keyboard_key_press _TME_P((int down, tme_keyboard_keyval_t key, void *disp));
+int _tme_keyboard_key_event _TME_P((struct tme_keyboard_event *, struct tme_display *));
 void _tme_mouse_new _TME_P((struct tme_display *));
 void _tme_mouse_mode_off _TME_P((struct tme_screen *, tme_uint32_t));
 int _tme_mouse_connections_new _TME_P((struct tme_display *,
 				       struct tme_connection **));
 int _tme_mouse_buttons_event _TME_P((int buttons, int x, int y, void *disp));
+int _tme_mouse_button_press _TME_P((int button, int x, int y, struct tme_display *));
 
 #endif /* _HOST_DISPLAY_H */
 

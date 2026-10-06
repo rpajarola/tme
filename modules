@@ -85,7 +85,10 @@ modules-local:
 # @TME_PREOPEN@ is then used on the program's link command line.
 # 
 # Note: this works differently now - please see comment in top Makefile for modules target
-	@if test "x$(pkglib_LTLIBRARIES)" != x; then		\
+# the optional host modules are left out, since configure decides
+# which of those are built, and substitutes them as @TME_HOST_PREOPEN@:
+	@case "$(subdir)" in host/display/*|host/eth/*) exit 0 ;; esac ; \
+	if test "x$(pkglib_LTLIBRARIES)" != x; then		\
 	    for module in $(pkglib_LTLIBRARIES); do		\
 		echo $$module ;					\
 		echo " \\" >> $(top_srcdir)/tme-preopen.txt ; \

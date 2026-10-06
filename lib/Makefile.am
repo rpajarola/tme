@@ -23,6 +23,7 @@ EXTRA_DIST = \
 noinst_LTLIBRARIES = libcompat.la
 
 libcompat_la_SOURCES = \
+	compat.c \
 	compat.h compat-stdbool.h \
 	mman.h
 

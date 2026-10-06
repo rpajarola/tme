@@ -875,7 +875,8 @@ int tme_eth_alloc(char *dev_filename, char **_output)
 int
 tme_eth_connections_new(struct tme_element *element, 
 			const char * const *args, 
-			struct tme_connection **_conns)
+			struct tme_connection **_conns,
+			char **_output)
 {
   struct tme_ethernet *eth;
   struct tme_ethernet_connection *conn_eth;

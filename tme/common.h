@@ -462,11 +462,13 @@ static _tme_inline tme_time_t tme_thread_get_time _TME_P((void)) {
 typedef struct tm tme_date_t;
 static _tme_inline tme_date_t *tme_time_get_date _TME_P((tme_time_t time, tme_date_t *date)) {
   time_t sec = TME_TIME_GET_SEC(time);
-#ifdef _TME_HAVE_GMTIME_S
+#if defined(_TME_HAVE_GMTIME_R)
+  return gmtime_r(&sec, date);
+#elif defined(_TME_HAVE_GMTIME_S)
+  /* this is the Microsoft gmtime_s, not the C11 one, which takes its
+     arguments in the other order: */
   gmtime_s(date, &sec);
   return date;
-#elif defined(_TME_HAVE_GMTIME_R)
-  return gmtime_r(&sec, date);
 #else
   return date = gmtime(&sec);
 #endif

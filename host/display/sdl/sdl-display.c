@@ -42,7 +42,7 @@
 #elif HAVE_RFB_KEYSYM_H
 #include <rfb/keysym.h>
 #else
-#error "No keysym header file on system."
+#include "sdl-keysym.h"
 #endif
 
 struct { char mask; int bits_stored; } utf8Mapping[]= {

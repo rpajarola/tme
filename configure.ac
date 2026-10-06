@@ -801,9 +801,11 @@ if test "x$have_sdl" = xyes; then
    fi
 fi
 
+have_rfb=no
 AS_IF([test "x${enable_rfb}" = xyes], [
-   PKG_CHECK_MODULES([RFB], [libvncclient libvncserver], [TME_DISPLAY_HOSTS="rfb ${TME_DISPLAY_HOSTS}"], AC_DEFINE([HAVE_RFB], [0], [No RFB]))
+   PKG_CHECK_MODULES([RFB], [libvncclient libvncserver], [TME_DISPLAY_HOSTS="rfb ${TME_DISPLAY_HOSTS}"; have_rfb=yes], AC_DEFINE([HAVE_RFB], [0], [No RFB]))
 ])
+AM_CONDITIONAL([HAVE_RFB_LIBS], [test "x${have_rfb}" = xyes])
 
 dnl The list of display host support is finished.
 AC_SUBST(TME_DISPLAY_HOSTS)
@@ -850,6 +852,17 @@ dnl The list of ethernet host support is finished.
 AC_SUBST(TME_ETH_HOSTS)
 
 AC_MSG_RESULT($TME_ETH_HOSTS)
+
+dnl The host modules for programs to preopen.  These depend on what
+dnl was found above, so they aren't in tme-preopen.txt:
+TME_HOST_PREOPEN=
+for tme_host in ${TME_DISPLAY_HOSTS}; do
+    TME_HOST_PREOPEN="${TME_HOST_PREOPEN} -dlopen ../host/display/${tme_host}/tme_host_${tme_host}.la"
+done
+for tme_host in ${TME_ETH_HOSTS}; do
+    TME_HOST_PREOPEN="${TME_HOST_PREOPEN} -dlopen ../host/eth/${tme_host}/tme_host_${tme_host}.la"
+done
+AC_SUBST(TME_HOST_PREOPEN)
 
 AC_SYS_POSIX_TERMIOS
 
@@ -1259,8 +1272,12 @@ if test "x${GCC}" = "xyes"; then
 fi
 AC_SUBST(CFLAGS_NO_STRICT_ALIASING)
 
-dnl For platforms, like Windows, where libraries must have all their symbols resolved
-LDFLAGS="${LDFLAGS-} -no-undefined"
+dnl For platforms, like Windows, where libraries must have all their symbols resolved.
+dnl Elsewhere this would keep libtool from letting modules use symbols from
+dnl the program that loads them, which macOS needs to be told explicitly.
+if test "x${WIN32}" != x; then
+  LDFLAGS="${LDFLAGS-} -no-undefined"
+fi
 
 dnl Generate tmeconfig.h.  The whether-to-generate logic is cribbed 
 dnl from glib-1.2.1's configure.ac.

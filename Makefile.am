@@ -20,4 +20,4 @@ dist-hook:
 # If new modules are added, "make modules" must be run to update this list in the source.
 modules-local:
 	rm -f ${top_srcdir}/tme/tme-plugins.txt
-	echo -n LDADD = > $(top_srcdir)/tme-preopen.txt 
+	echo -n 'LDADD = @TME_HOST''_PREOPEN@' > $(top_srcdir)/tme-preopen.txt

@@ -110,6 +110,7 @@ struct tme_display_menu_item {
 /* prototypes: */
 void _tme_gtk_keyboard_attach _TME_P((struct tme_gtk_screen *));
 void _tme_gtk_mouse_attach _TME_P((struct tme_gtk_screen *));
+void _tme_gtk_mouse_mode_off _TME_P((struct tme_gtk_screen *, guint32));
 gint _tme_display_enter_focus _TME_P((GtkWidget *, GdkEvent *, gpointer));
 GtkWidget *_tme_display_menu_radio _TME_P((struct tme_gtk_screen *, struct tme_display_menu_item *, int num_items));
 

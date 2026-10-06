@@ -326,6 +326,8 @@ _tme_bsd_bpf_read(struct tme_ethernet_connection *conn_eth,
 #define TME_BPF_TIME_INC(a,x) _TME_TIME_INC(a,x,bt_sec,bt_frac)
 #define TME_BPF_TIME_SUB(a,x,y) _TME_TIME_SUB(a,x,y,bt_sec,bt_frac)
 #define TME_BPF_TIME_DEC(a,x) _TME_TIME_DEC(a,x,bt_sec,bt_frac)
+  // BPF_T_NANOTIME puts nanoseconds in bt_frac
+#define TME_BPF_TIME_GET(a) (TME_TIME_SET_SEC((a).bt_sec) + TME_TIME_SET_NSEC((a).bt_frac))
 #else
   // Make timeval (microsecond-accuracy) macros
   struct bpf_hdr the_bpf_header;
@@ -343,6 +345,7 @@ _tme_bsd_bpf_read(struct tme_ethernet_connection *conn_eth,
 #define TME_BPF_TIME_INC(a,x) _TME_TIME_INC(a,x,tv_sec,tv_usec)
 #define TME_BPF_TIME_SUB(a,x,y) _TME_TIME_SUB(a,x,y,tv_sec,tv_usec)
 #define TME_BPF_TIME_DEC(a,x) _TME_TIME_DEC(a,x,tv_sec,tv_usec)
+#define TME_BPF_TIME_GET(a) (TME_TIME_SET_SEC((a).tv_sec) + TME_TIME_SET_USEC((a).tv_usec))
 #endif
   struct tme_ethernet_frame_chunk frame_chunk_buffer;
   size_t buffer_offset_next;
@@ -415,9 +418,7 @@ _tme_bsd_bpf_read(struct tme_ethernet_connection *conn_eth,
 
     /* if packets need to be delayed: */
     if (delay_time > 0) {
-      TME_TIME_SETV(tstamp, 
-		    TME_BPF_TIME_SEC(the_bpf_header.bh_tstamp), 
-		    TME_BPF_TIME_GET_FRAC(the_bpf_header.bh_tstamp));
+      tstamp = TME_BPF_TIME_GET(the_bpf_header.bh_tstamp);
       /* if the current release time is before this packet's time: */
       if (tstamp > bpf->tme_eth_delay_release) {
 	/* update the current release time, by taking the current time
@@ -488,11 +489,12 @@ _tme_bsd_bpf_read(struct tme_ethernet_connection *conn_eth,
 static int
 _tme_bsd_bpf_connections_new(struct tme_element *element, 
 			     const char * const *args, 
-			     struct tme_connection **_conns)
+			     struct tme_connection **_conns,
+			     char **_output)
 {
   struct tme_ethernet_connection *conn_eth;
 
-  tme_eth_connections_new(element, args, _conns);
+  tme_eth_connections_new(element, args, _conns, _output);
   conn_eth = (struct tme_ethernet_connection *) (*_conns);
   conn_eth->tme_ethernet_connection_config = _tme_bsd_bpf_config;
 #ifndef HAVE_LSF

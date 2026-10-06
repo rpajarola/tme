@@ -1,4 +1,4 @@
-LDADD = \
+LDADD = @TME_HOST_PREOPEN@ \
 	-dlopen ../generic/tme_generic.la \
 	-dlopen ../ic/m68k/tme_ic_m68k.la \
 	-dlopen ../ic/sparc/tme_ic_sparc.la \
@@ -21,12 +21,6 @@ LDADD = \
 	-dlopen ../machine/sun2/tme_machine_sun2.la \
 	-dlopen ../machine/sun3/tme_machine_sun3.la \
 	-dlopen ../machine/sun4/tme_machine_sun4.la \
-	-dlopen ../host/display/rfb/tme_host_rfb.la \
-	-dlopen ../host/display/sdl/tme_host_sdl.la \
-	-dlopen ../host/display/gtk/tme_host_gtk.la \
-	-dlopen ../host/eth/bsd/tme_host_bsd.la \
-	-dlopen ../host/eth/tun/tme_host_tun.la \
-	-dlopen ../host/eth/udp/tme_host_udp.la \
 	-dlopen ../host/tme_host_posix.la \
 	-dlopen ../bus/multibus/tme_bus_multibus.la \
 	-dlopen ../bus/sbus/tme_bus_sbus.la \

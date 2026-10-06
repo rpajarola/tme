@@ -203,7 +203,8 @@ int tme_eth_alloc _TME_P((char *dev_filename,
 
 int tme_eth_connections_new _TME_P((struct tme_element *element, 
 				    const char * const *args, 
-				    struct tme_connection **_conns));
+				    struct tme_connection **_conns,
+				    char **_output));
 
 int tme_eth_init _TME_P((struct tme_element *element,
 			 tme_thread_handle_t hand,

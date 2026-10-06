@@ -272,11 +272,12 @@ _tme_tun_tap_config(struct tme_ethernet_connection *conn_eth,
 static int
 _tme_tun_tap_connections_new(struct tme_element *element, 
 			     const char * const *args, 
-			     struct tme_connection **_conns)
+			     struct tme_connection **_conns,
+			     char **_output)
 {
   struct tme_ethernet_connection *conn_eth;
 
-  tme_eth_connections_new(element, args, _conns);
+  tme_eth_connections_new(element, args, _conns, _output);
   conn_eth = (struct tme_ethernet_connection *) (*_conns);
 
   /* fill in the Ethernet connection: */
