@@ -45,6 +45,10 @@ _TME_RCSID("$Id: serial-kb.c,v 1.7 2007/01/21 15:45:01 fredette Exp $");
 #include <ctype.h>
 #include <errno.h>
 
+/* the built-in keyboard maps, from machine/sun/sun-keyboards.txt.
+   they're used when no map file is given, or it can't be opened: */
+#include "kb-maps.h"
+
 /* macros: */
 #define TME_SERIAL_KB_BUFFER_SIZE	(1024)
 
@@ -888,9 +892,8 @@ TME_ELEMENT_X_NEW_DECL(tme_serial_,kb,keyboard) {
     /* if we've run out of arguments: */
     else if (args[arg_i + 0] == NULL) {
 
-      /* we must have been given a type and a map file: */
-      if (kb_type == NULL
-	  || kb_map_filename == NULL) {
+      /* we must have been given a type: */
+      if (kb_type == NULL) {
 	usage = TRUE;
       }
       break;
@@ -909,7 +912,7 @@ TME_ELEMENT_X_NEW_DECL(tme_serial_,kb,keyboard) {
 
   if (usage) {
     tme_output_append_error(_output, 
-			    "%s %s type %s [ macros %s ] map %s [ rate %s ]",
+			    "%s %s type %s [ macros %s ] [ map %s ] [ rate %s ]",
 			    _("usage:"),
 			    args[0],
 			    _("KEYBOARD-TYPE"),
@@ -1022,14 +1025,29 @@ TME_ELEMENT_X_NEW_DECL(tme_serial_,kb,keyboard) {
   kb_map = NULL;
   kb_map_count = 0;
 
-  /* try to open the map file: */
-  kb_map_file = fopen(kb_map_filename, "r");
-  if (kb_map_file == NULL) {
-    tme_output_append_error(_output, "%s", kb_map_filename);
-    if (kb_macros != NULL) {
-      tme_free_string_array(kb_macros, -1);
+  /* try to open the map file, or else the built-in maps: */
+  kb_map_file = NULL;
+  if (kb_map_filename != NULL) {
+    kb_map_file = fopen(kb_map_filename, "r");
+    if (kb_map_file == NULL) {
+      tme_output_append(_output,
+			_("%s: %s, using the built-in keyboard maps"),
+			kb_map_filename,
+			strerror(errno));
     }
-    return (errno);
+  }
+  if (kb_map_file == NULL) {
+    kb_map_filename = _("built-in keyboard maps");
+    kb_map_file = fmemopen((void *) _tme_serial_kb_maps,
+			   strlen(_tme_serial_kb_maps),
+			   "r");
+    if (kb_map_file == NULL) {
+      tme_output_append_error(_output, "%s", kb_map_filename);
+      if (kb_macros != NULL) {
+	tme_free_string_array(kb_macros, -1);
+      }
+      return (errno);
+    }
   }
     
   /* loop over all of the lines in the file: */

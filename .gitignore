@@ -56,6 +56,7 @@ Makefile
 /tme/recode-host.h
 /tmesh/tmesh-input.c
 /tmesh/tmesh-plugins.h
+/serial/kb-maps.h
 
 # programs
 /machine/sun/tme-sun-eeprom

@@ -21,4 +21,12 @@ tme_serial_kb_la_SOURCES = \
 tme_serial_kb_la_LDFLAGS = -rpath $(pkglibdir) -module -version-info 0:0:0
 tme_serial_kb_la_LIBADD = $(top_builddir)/generic/libtme-generic.la 
 
+# the built-in keyboard maps:
+BUILT_SOURCES = kb-maps.h
+CLEANFILES = kb-maps.h
+kb-maps.h: $(top_srcdir)/machine/sun/sun-keyboards.txt
+	{ echo 'static const char _tme_serial_kb_maps[] ='; \
+	  sed -e 's/.*/  "&\\n"/' $(top_srcdir)/machine/sun/sun-keyboards.txt; \
+	  echo '  ;'; } > $@
+
 include $(top_srcdir)/modules
