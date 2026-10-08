@@ -1,0 +1,62 @@
+# autoreconf output
+/aclocal.m4
+/autom4te.cache/
+/compile
+/config.guess
+/config.h.in
+/config.sub
+/configure
+/depcomp
+/INSTALL
+/install-sh
+/libltdl/
+/ltmain.sh
+/m4/libtool.m4
+/m4/lt*.m4
+/missing
+/tme/mdate-sh
+/tme/texinfo.tex
+/ylwrap
+Makefile.in
+*~
+
+# configure output, for builds in the source tree
+/config.h
+/config.log
+/config.status
+/libtool
+/stamp-h1
+/tmeconfig.h
+/tmememory.h
+Makefile
+!/edist/**/Makefile
+
+# build output
+*.o
+*.lo
+*.la
+*.a
+.deps/
+.dirstamp
+.libs/
+/tme/stamp-vti
+/tme/tme.info
+/tme/version.texi
+
+# sources generated from .m4, .pl and .y files
+*-auto.c
+*-auto.h
+*-auto.sh
+/host/display/keymap.h
+/ic/ieee754/ieee754-precision.sh
+/ic/m68k/m68k-opmap.c
+/libtme/misc-host.c
+/libtme/recode-host.c
+/libtme/shlibvar.h
+/tme/recode-host.h
+/tmesh/tmesh-input.c
+
+# programs
+/machine/sun/tme-sun-eeprom
+/machine/sun/tme-sun-idprom
+/tmesh/tmesh
