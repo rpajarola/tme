@@ -37,11 +37,18 @@ _TME_RCSID("$Id: threads-sjlj.c,v 1.18 2010/06/05 19:10:28 fredette Exp $");
 /* includes: */
 #include <tme/threads.h>
 #include <tme/module.h>
+#ifdef TME_BUILTIN_MODULES
+#include "tmesh-plugins.h"
+#endif
 
 /* this initializes modules: */
 static _tme_inline int tme_module_init _TME_P((void)) {
   int rc;
   _tme_module_init();
+#ifdef TME_BUILTIN_MODULES
+  /* the modules are linked into tmesh: */
+  tme_module_builtin(_tmesh_plugins);
+#endif
   LTDL_SET_PRELOADED_SYMBOLS();
   rc = lt_dlinit();
   if (rc != 0) {

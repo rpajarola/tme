@@ -81,6 +81,10 @@ struct tme_module {
 };
 
 static tme_mutex_t _tme_module_mutex;
+
+/* when modules are linked into the program, this is the modules
+   index, and the modules are opened from the preloaded symbols: */
+static const char *_tme_module_builtin_index;
 #define lt_preloaded_symbols	lt__PROGRAM__LTX_preloaded_symbols
 extern LT_DLSYM_CONST lt_dlsymlist lt__PROGRAM__LTX_preloaded_symbols[];
 
@@ -89,6 +93,14 @@ void
 _tme_module_init(void)
 {
   tme_mutex_init(&_tme_module_mutex);
+}
+
+/* this makes the modules linked into the program the only ones that
+   can be opened, using the given contents of their modules index: */
+void
+tme_module_builtin(const char *modules_index)
+{
+  _tme_module_builtin_index = modules_index;
 }
 
 /* this finds a modules directory: */
@@ -253,9 +265,17 @@ tme_module_open(const char *module_fake_pathname, void **_module, char **_output
   }
 
   /* open the modules index for this top name: */
-  modules_index = _tme_modules_find(module_raw_name, 
-				    (first_slash - module_raw_name),
-				    &modules_dir);
+  if (_tme_module_builtin_index != NULL) {
+    modules_index = fmemopen((void *) _tme_module_builtin_index,
+			     strlen(_tme_module_builtin_index),
+			     "r");
+    modules_dir = tme_strdup("");
+  }
+  else {
+    modules_index = _tme_modules_find(module_raw_name, 
+				      (first_slash - module_raw_name),
+				      &modules_dir);
+  }
   if (modules_index == NULL) {
     tme_output_append_error(_output, "%s", module_fake_pathname);
     tme_free(module_raw_name);
@@ -310,17 +330,23 @@ tme_module_open(const char *module_fake_pathname, void **_module, char **_output
 		     ? tokens[1]
 		     : tokens[0]);
   
-  /* form the real module pathname: */
+  /* form the real module pathname.  libtool names a module linked
+     into the program after its static archive: */
   module_pathname = tme_renew(char,
 			      modules_dir,
 			      strlen(modules_dir)
 			      + strlen(module_basename)
-			      + 1);
+			      + sizeof(".a"));
   strcat(module_pathname, module_basename);
+  if (_tme_module_builtin_index != NULL) {
+    strcat(module_pathname, ".a");
+  }
   
   /* dlopen the module: */
   tme_mutex_lock(&_tme_module_mutex);
-  handle = lt_dlopenext(module_pathname);
+  handle = (_tme_module_builtin_index != NULL
+	    ? lt_dlopen(module_pathname)
+	    : lt_dlopenext(module_pathname));
   tme_mutex_unlock(&_tme_module_mutex);
   tme_free(module_pathname);
   if (handle == NULL) {

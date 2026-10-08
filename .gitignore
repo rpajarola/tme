@@ -55,6 +55,7 @@ Makefile
 /libtme/shlibvar.h
 /tme/recode-host.h
 /tmesh/tmesh-input.c
+/tmesh/tmesh-plugins.h
 
 # programs
 /machine/sun/tme-sun-eeprom

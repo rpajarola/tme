@@ -1071,6 +1071,13 @@ changequote(<<, >>)dnl
 dnl Make brackets the quote characters again.
 changequote([, ])dnl
 
+dnl Link the modules into tmesh, so it runs without installing them,
+dnl or else load them from where they are installed:
+AC_ARG_ENABLE(builtin-modules,
+[  --disable-builtin-modules  load modules at run time instead of linking them into tmesh],
+[ ], [enable_builtin_modules=yes])
+AM_CONDITIONAL([TME_BUILTIN_MODULES], [test "x${enable_builtin_modules}" = xyes])
+
 AC_ARG_ENABLE(recode,
 [  --enable-recode         enable recode (dynamic binary translation) (default=if host supports)],
 [ ], [enable_recode=${recode}])
