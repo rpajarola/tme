@@ -158,7 +158,6 @@ LIBS=$OLDLIBS
 AC_SUBST(NATLIBS)
 
 dnl Checks for header files.
-AC_HEADER_STDC
 AC_CHECK_HEADERS([unistd.h stdio.h memory.h stdarg.h stdbool.h limits.h float.h])
 AC_CHECK_HEADERS([sys/ioctl.h sys/sockio.h sys/socketio.h net/if_dl.h ioctls.h netpacket/packet.h ifaddrs.h])
 AC_CHECK_HEADERS([byteswap.h sys/endian.h])
@@ -1066,7 +1065,7 @@ AC_SUBST(TME_FB_XLAT_SRC)
 
 dnl Checks for X11.
 AC_PATH_XTRA
-AC_PERL_MODULE_VERSION(X11::Protocol 0.56, [], no_x=yes)
+AX_PERL_MODULE_VERSION(X11::Protocol 0.56, [], no_x=yes)
 AM_CONDITIONAL([USING_X], [test "x${no_x}" = x])
 
 dnl Configure recode.

@@ -40,40 +40,10 @@ dnl The cache variable name.
 define(<<AC_CV_NAME>>, translit(ac_cv_alignof_int$1_t, [ *], [_p]))dnl
 changequote([, ])dnl
 AC_MSG_CHECKING(minimum alignment of int$1_t)
-AC_CACHE_VAL(AC_CV_NAME,
-[AC_TRY_RUN([#include <stdio.h>
-#include <sys/types.h>
-main()
-{
-#if (SIZEOF_SHORT * 8) == $1
-#define _type short
-#elif (SIZEOF_INT * 8) == $1
-#define _type int
-#else
-#define _type long
-#endif
-  char try_align_buffer[sizeof(_type) * 2];
-  int min_align, try_align, status;
-  _type value;
-  FILE *f=fopen("conftestval", "w");
-  if (!f) exit(1);
-  min_align = sizeof(_type);
-  for(try_align = sizeof(_type); try_align-- > 1;) {
-    switch(fork()) {
-    case -1: exit(1);
-    case 0: value = *((_type *) &try_align_buffer[try_align]); 
-      fprintf(stderr, "%d\n", (int) (value / 2)); exit(0);
-    default: break;
-    }
-    wait(&status);
-    if (!status && try_align < min_align) {
-      min_align = try_align;
-    }
-  }
-  fprintf(f, "%d\n", min_align * 8);
-  exit(0);
-}], AC_CV_NAME=`cat conftestval`, AC_CV_NAME=$1, AC_CV_NAME=$1)])dnl
-AC_CV_NAME=`expr $AC_CV_NAME / 8`
+dnl Accessing a misaligned int$1_t is undefined in C, and atomic accesses
+dnl fault on some hosts even when plain ones work, so always use the
+dnl natural alignment instead of probing for a smaller one.
+AC_CV_NAME=`expr $1 / 8`
 AC_MSG_RESULT($AC_CV_NAME)
 AC_DEFINE_UNQUOTED(AC_TYPE_NAME, $AC_CV_NAME, [Define to the minimum alignment, in bytes, of int$1_t.])
 undefine([AC_TYPE_NAME])dnl
@@ -89,48 +59,9 @@ dnl The cache variable name.
 define(<<AC_CV_NAME>>, translit(ac_cv_shiftmax_int$1_t, [ *], [_p]))dnl
 changequote([, ])dnl
 AC_MSG_CHECKING(maximum shift count for int$1_t)
-AC_CACHE_VAL(AC_CV_NAME,
-[AC_TRY_RUN([#include <stdio.h>
-#include <sys/types.h>
-main()
-{
-#if 8 == $1
-#define _type char
-#elif (SIZEOF_SHORT * 8) == $1
-#define _type short
-#elif (SIZEOF_INT * 8) == $1
-#define _type int
-#elif (SIZEOF_LONG * 8) == $1
-#define _type long
-#endif
-  _type center, right, left;
-  unsigned int shift, max_shift;
-  FILE *f=fopen("conftestval", "w");
-  if (!f) exit(1);
-  center = 3;
-  center <<= ((sizeof(center) * 4) - 1);
-  max_shift = 2047;
-  sscanf("0", "%d", &shift);
-  for (shift += (sizeof(center) * 8);
-       shift < 2048;
-       shift <<= 1) {
-    right = (center >> shift);
-    left = (center << shift);
-    if (right != 0
-	|| left != 0) {
-      right = (center >> (shift | 1));
-      left = (center << (shift | 1));
-      max_shift = ((right == (center >> 1)
-		    && left == (center << 1))
-		   ? shift - 1
-		   : (sizeof(center) * 8) - 1);
-      break;
-    }
-  }
-  fprintf(f, "%d\n", max_shift + 1);
-  exit(0);
-}], AC_CV_NAME=`cat conftestval`, AC_CV_NAME=$1, AC_CV_NAME=$1)])dnl
-AC_CV_NAME=`expr $AC_CV_NAME - 1`
+dnl C leaves shifting by the width of the type or more undefined, so
+dnl this can't be probed for; it's always one less than the width.
+AC_CV_NAME=`expr $1 - 1`
 AC_MSG_RESULT($AC_CV_NAME)
 AC_DEFINE_UNQUOTED(AC_TYPE_NAME, $AC_CV_NAME, [Define to the maximum shift count for a int$1_t.])
 undefine([AC_TYPE_NAME])dnl
@@ -147,9 +78,12 @@ define(<<AC_CV_NAME>>, translit(ac_cv_shiftsigned_int$1_t, [ *], [_p]))dnl
 changequote([, ])dnl
 AC_MSG_CHECKING(for arithmetic right shifts of int$1_t)
 AC_CACHE_VAL(AC_CV_NAME,
-[AC_TRY_RUN([#include <stdio.h>
+[AC_RUN_IFELSE([AC_LANG_SOURCE([[#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <sys/types.h>
-main()
+int
+main(void)
 {
 #if 8 == $1
 #define _type signed char
@@ -177,13 +111,13 @@ main()
   prime = -2147483647;
 #elif $1 == 64
   /* this is a crafty way of constructing -9223372036854775783,
-     which is 0x8000000000000000 - 0x19, without having to know 
+     which is -0x8000000000000000 + 0x19, without having to know 
      any compiler suffix for 64-bit literals: */
   prime = 1;
   prime <<= ($1 - 2);
   prime = -prime;
   prime *= 2;
-  prime -= 0x19;
+  prime += 0x19;
 #else
 #error "need another prime"
 #endif
@@ -207,7 +141,7 @@ main()
 
   fprintf(f, "%d\n", (shift > SHIFTMAX_INT$1_T ? 1 : 0));
   exit(0);
-}], AC_CV_NAME=`cat conftestval`, AC_CV_NAME=0, AC_CV_NAME=0)])dnl
+}]])],[AC_CV_NAME=`cat conftestval`],[AC_CV_NAME=0],[AC_CV_NAME=0])])dnl
 if test $AC_CV_NAME = 1; then
   AC_MSG_RESULT(yes)
   AC_DEFINE_UNQUOTED(AC_TYPE_NAME, [], [Define if all right shifts of int$1_t are arithmetic.])
@@ -228,9 +162,12 @@ define(<<AC_CV_NAME>>, translit(ac_cv_float_format_$1, [ *], [_p]))dnl
 changequote([, ])dnl
 AC_MSG_CHECKING(the floating point format of $1)
 AC_CACHE_VAL(AC_CV_NAME,
-[AC_TRY_RUN([#include <stdio.h>
+[AC_RUN_IFELSE([AC_LANG_SOURCE([[#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <sys/types.h>
-main()
+int
+main(void)
 {
   $1 value;
   unsigned short value_buffer[16];
@@ -292,7 +229,7 @@ main()
   /* otherwise, this is some native type: */
   fprintf(f, "NATIVE\n");
   exit (0);
-}], AC_CV_NAME=`cat conftestval`, AC_CV_NAME=NATIVE, AC_CV_NAME=NATIVE)])dnl
+}]])],[AC_CV_NAME=`cat conftestval`],[AC_CV_NAME=NATIVE],[AC_CV_NAME=NATIVE])])dnl
 AC_MSG_RESULT($AC_CV_NAME)
 if test $AC_CV_NAME != NATIVE; then
   AC_DEFINE_UNQUOTED(AC_TYPE_NAME, $AC_CV_NAME, [Define to the floating point format of a $1.])
@@ -315,13 +252,13 @@ AC_CACHE_VAL(AC_CV_NAME,
 [for limits in $2; do
   max=`echo $limits | sed -e 's%^\(.*\)/\(.*\)$%\1%'`
   min=`echo $limits | sed -e 's%^\(.*\)/\(.*\)$%\2%'`
-  AC_TRY_COMPILE([#include <sys/types.h>
+  AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#include <sys/types.h>
 #ifdef HAVE_FLOAT_H
 #include <float.h>
 #endif
 #ifdef HAVE_LIMITS_H
 #include <limits.h>
-#endif], [ $1 x; x = $max - $min; ], [AC_CV_NAME=$limits ; break], AC_CV_NAME= )
+#endif]], [[ $1 x; x = $max - $min; ]])],[AC_CV_NAME=$limits ; break],[AC_CV_NAME= ])
 done])
 if test "x$AC_CV_NAME" = x; then
   AC_MSG_ERROR(can't determine the limits of $1)
@@ -348,11 +285,11 @@ AC_MSG_CHECKING(for $1)
 AC_CACHE_VAL(AC_CV_NAME,
 [ac_func_long_LIBS=$LIBS
 LIBS="${LIBS-} $4"
-AC_TRY_LINK([
+AC_LINK_IFELSE([AC_LANG_PROGRAM([[
 $3
-], [
+]], [[
 $2
-], AC_CV_NAME=yes, AC_CV_NAME=no)
+]])],[AC_CV_NAME=yes],[AC_CV_NAME=no])
 LIBS=$ac_func_long_LIBS])dnl
 AC_MSG_RESULT($AC_CV_NAME)
 if test $AC_CV_NAME = yes; then
@@ -399,10 +336,10 @@ dnl AC_HEADER_CHECK_PROTOTYPE(FUNCTION, INCLUDES, [ACTION-IF-FOUND [, ACTION-IF-
 AC_DEFUN([AC_HEADER_CHECK_PROTOTYPE], 
 [AC_MSG_CHECKING([for a prototype for $1])
 AC_CACHE_VAL(ac_cv_proto_$1,
-[AC_TRY_COMPILE($2 [
+[AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[$2 
 struct bonch { int a, b; };
 struct bonch $1();
-], , eval "ac_cv_proto_$1=no", eval "ac_cv_proto_$1=yes")])
+]], [[]])],[eval "ac_cv_proto_$1=no"],[eval "ac_cv_proto_$1=yes"])])
 if eval "test \"`echo '$ac_cv_proto_'$1`\" = yes"; then
   AC_MSG_RESULT(yes)
   ifelse([$3], , :, [$3])
@@ -429,14 +366,14 @@ dnl AC_SYS_SOCKADDR_SA_LEN
 AC_DEFUN([AC_SYS_SOCKADDR_SA_LEN],
 [AC_MSG_CHECKING([for sa_len in struct sockaddr])
 AC_CACHE_VAL(ac_cv_sys_sockaddr_sa_len,
-[AC_TRY_COMPILE([
+[AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
 #include <sys/types.h>
 #include <sys/socket.h>
-], [
+]], [[
 int length;
 struct sockaddr sock;
 length = sock.sa_len;
-], ac_cv_sys_sockaddr_sa_len=yes, ac_cv_sys_sockaddr_sa_len=no)])dnl
+]])],[ac_cv_sys_sockaddr_sa_len=yes],[ac_cv_sys_sockaddr_sa_len=no])])dnl
 if test $ac_cv_sys_sockaddr_sa_len = yes; then
   AC_MSG_RESULT(yes)
   AC_DEFINE_UNQUOTED(HAVE_SOCKADDR_SA_LEN, [], [Define if your struct sockaddr has sa_len.])
