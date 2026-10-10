@@ -180,11 +180,17 @@ static struct tme_display_menu_item format_items[] =
 /* Screen-specific size request */
 static void _tme_gtk_screen_resize(struct tme_gtk_screen *screen) {
   struct tme_fb_connection *conn_fb = screen->screen.tme_screen_fb;
+  int scale_factor = screen->screen.tme_screen_scale;
   
-  /* set a minimum size */
+  /* set a minimum size.  the framebuffer is in device pixels, and the
+     size request is in logical ones: */
   gtk_widget_set_size_request(screen->tme_gtk_screen_gtkframe,
-			      conn_fb->tme_fb_connection_width,
-			      conn_fb->tme_fb_connection_height);
+			      ((conn_fb->tme_fb_connection_width
+				+ scale_factor - 1)
+			       / scale_factor),
+			      ((conn_fb->tme_fb_connection_height
+				+ scale_factor - 1)
+			       / scale_factor));
 }
 
 /* Create a similar image surface to the screen's target surface (i.e., backing store) */
@@ -256,6 +262,9 @@ _tme_gtk_screen_configure(GtkWidget         *widget,
   struct tme_fb_connection *conn_fb;
   GdkWindow *window;
   int scale;
+  int width, height;
+  cairo_surface_t *surface;
+  double device_scale_x, device_scale_y;
   
   screen = (struct tme_gtk_screen *) _screen;
 
@@ -265,20 +274,50 @@ _tme_gtk_screen_configure(GtkWidget         *widget,
   /* lock our mutex: */
   tme_mutex_lock(&display->tme_display_mutex);
 
-  cairo_surface_destroy(screen->tme_gtk_screen_surface);
-
   window = gtk_widget_get_window(screen->tme_gtk_screen_gtkframe);
   
   screen->screen.tme_screen_scale = gdk_window_get_scale_factor(window);
-  
-  screen->tme_gtk_screen_surface
-    = gdk_window_create_similar_image_surface(window,
-					      screen->tme_gtk_screen_format,
-					      gdk_window_get_width(window) * screen->screen.tme_screen_scale,
-					      gdk_window_get_height(window) * screen->screen.tme_screen_scale,
-					      screen->screen.tme_screen_scale);
 
   conn_fb = screen->screen.tme_screen_fb;
+
+  /* the framebuffer translation writes scanlines as wide as the
+     framebuffer size that _tme_screen_configure picked, in device
+     pixels, so make the surface exactly that size, rather than the
+     window's (which is in logical pixels, and on a HiDPI display is
+     only a fraction of that).  until that size is known, use the
+     window's: */
+  width = conn_fb->tme_fb_connection_width;
+  height = conn_fb->tme_fb_connection_height;
+  if (width <= 0 || height <= 0) {
+    width = gdk_window_get_width(window) * screen->screen.tme_screen_scale;
+    height = gdk_window_get_height(window) * screen->screen.tme_screen_scale;
+  }
+
+  /* keep the current surface if it's still right, since a new one
+     starts out blank: */
+  surface = screen->tme_gtk_screen_surface;
+  if (surface == NULL
+      || cairo_surface_get_type(surface) != CAIRO_SURFACE_TYPE_IMAGE
+      || cairo_image_surface_get_width(surface) != width
+      || cairo_image_surface_get_height(surface) != height
+      || cairo_image_surface_get_format(surface) != screen->tme_gtk_screen_format
+      || (cairo_surface_get_device_scale(surface, &device_scale_x, &device_scale_y),
+	  device_scale_x != screen->screen.tme_screen_scale)) {
+
+    if (surface != NULL) {
+      cairo_surface_destroy(surface);
+    }
+    screen->tme_gtk_screen_surface
+      = gdk_window_create_similar_image_surface(window,
+						screen->tme_gtk_screen_format,
+						width,
+						height,
+						screen->screen.tme_screen_scale);
+
+    /* the translation only writes what changed since it last ran, so
+       make the next one start over and draw the whole new surface: */
+    screen->screen.tme_screen_fb_xlat = NULL;
+  }
 
   /* update our framebuffer connection: */
   conn_fb->tme_fb_connection_width = cairo_image_surface_get_width(screen->tme_gtk_screen_surface);

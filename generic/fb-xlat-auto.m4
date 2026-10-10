@@ -545,6 +545,56 @@ do {								\\
   fifo = 0;							\\
 } while (/* CONSTCOND */ 0)
 
+/* this skips a destination FIFO ahead one whole scanline, leaving
+   the scanline in between untouched.  it must be called right after
+   the FIFO has been shifted, when its writable part is empty: */
+#define TME_FB_XLAT_SKIP_DST(unaligned, fifo, next, bits, raw, order)\\
+do {								\\
+								\\
+  /* if the destination FIFO may not be 32-bit aligned: */      \\
+  if (unaligned) {						\\
+								\\
+    /* merge any bits waiting in the FIFO into the partial	\\
+       32-bit word they belong to: */				\\
+    if (bits > 0) {						\\
+      fifo = (order == TME_ENDIAN_BIG				\\
+              ? tme_betoh_u32(*raw)				\\
+              : tme_letoh_u32(*raw));				\\
+      next |= (order == TME_ENDIAN_BIG				\\
+               ? (fifo & (0xffffffff >> bits))			\\
+               : (fifo & (0xffffffff << bits)));		\\
+      *raw = (order == TME_ENDIAN_BIG				\\
+              ? tme_htobe_u32(next)				\\
+              : tme_htole_u32(next));				\\
+    }								\\
+								\\
+    /* reprime the FIFO one scanline further on: */		\\
+    dst_off = ((((tme_uint8_t *) (raw))				\\
+                - dst->tme_fb_connection_buffer) * 8)		\\
+               + bits						\\
+               + (dst_bypl * 8);				\\
+    bits = dst_off % 32;					\\
+    raw = (tme_uint32_t *)					\\
+      (dst->tme_fb_connection_buffer				\\
+       + ((dst_off - bits) / 8));				\\
+    next = 0;							\\
+    if (bits) {							\\
+      next = (order == TME_ENDIAN_BIG				\\
+              ? (tme_betoh_u32(*raw) & (0xffffffffUL << (32 - bits)))\\
+              : (tme_letoh_u32(*raw) & (0xffffffffUL >> (32 - bits))));\\
+    }								\\
+  }								\\
+								\\
+  /* otherwise, the FIFO is always 32-bit aligned, and so is	\\
+     every scanline: */						\\
+  else {							\\
+    raw = (tme_uint32_t *) (((tme_uint8_t *) (raw)) + dst_bypl);\\
+  }								\\
+								\\
+  /* clear the writable part of the FIFO: */			\\
+  fifo = 0;							\\
+} while (/* CONSTCOND */ 0)
+
 /* _TME_FB_XLAT_MAP_LINEAR_SCALE gives the factor needed to scale a
    masked value up or down to a given size in bits.  for example, if a
    value's mask is 0xf800 (a five bit mask), and the value needs to be
@@ -1251,6 +1301,10 @@ for src_key in ${src_all}; do
 	    $as_echo "  tme_uint32_t *dst_raw1;"
 	    $as_echo "  tme_uint32_t dst_fifo1, dst_fifo1_next;"
 	    $as_echo "  unsigned int dst_fifo1_bits;"
+	    $as_echo ""
+	    $as_echo "  /* dst_skip is nonzero when the destination FIFOs need to skip"
+	    $as_echo "     ahead one scanline once they've been shifted: */"
+	    $as_echo "  int dst_skip = FALSE;"
 	fi
 
 	$as_echo ""
@@ -2469,11 +2523,19 @@ for src_key in ${src_all}; do
 	    fi
 
 	    $as_echo ""
-	    $as_echo "      /* if the destination buffer is not packed, and we just"
-	    $as_echo "         wrote the last pixel on this destination scanline: */"
-	    if test $scale = _d_; then value=2; else value=1; fi
-	    $as_echo "      if (!dst_packed"
-	    $as_echo "          && (dst_x += ${value}) == dst_width) {"
+	    if test $scale = _d_; then
+		# when doubling, the end of every scanline matters, even
+		# in a packed destination, because the next scanline was
+		# written by the other destination FIFO and must be skipped:
+		$as_echo "      /* if we just wrote the last pixel on this destination"
+		$as_echo "         scanline: */"
+		$as_echo "      if ((dst_x += 2) == dst_width) {"
+	    else
+		$as_echo "      /* if the destination buffer is not packed, and we just"
+		$as_echo "         wrote the last pixel on this destination scanline: */"
+		$as_echo "      if (!dst_packed"
+		$as_echo "          && (dst_x += 1) == dst_width) {"
+	    fi
 	    $as_echo ""
 	    $as_echo "        /* calculate the number of bits between the"
 	    $as_echo "           last bit of the last pixel and the first bit"
@@ -2505,6 +2567,16 @@ for src_key in ${src_all}; do
 		$as_echo "                                dst_order);"
 	    fi
 	    $as_echo "        }"
+	    if test $scale = _d_; then
+		$as_echo ""
+		$as_echo "        /* once the last pixels on this scanline have been"
+		$as_echo "           shifted out of the FIFOs, the primary FIFO will be"
+		$as_echo "           at the start of the scanline that the secondary FIFO"
+		$as_echo "           just wrote, and the secondary FIFO will be at the"
+		$as_echo "           start of the one after that, so both will need to"
+		$as_echo "           skip ahead one scanline, to the next pair: */"
+		$as_echo "        dst_skip = TRUE;"
+	    fi
 	    $as_echo ""
 	    $as_echo "        /* we are now on the first pixel of the next scanline: */"
 	    $as_echo "        dst_x = 0;"
@@ -2530,6 +2602,24 @@ for src_key in ${src_all}; do
 		    $as_echo "                            ${dst_fifo_shift},"
 		    $as_echo "                            dst_raw1,"
 		    $as_echo "                            dst_order);"
+		    $as_echo ""
+		    $as_echo "      /* if that finished a pair of destination scanlines,"
+		    $as_echo "         skip both FIFOs ahead to the next pair: */"
+		    $as_echo "      if (__tme_predict_false(dst_skip)) {"
+		    $as_echo "        TME_FB_XLAT_SKIP_DST(dst_fifo0_may_be_unaligned,"
+		    $as_echo "                             dst_fifo0,"
+		    $as_echo "                             dst_fifo0_next,"
+		    $as_echo "                             dst_fifo0_bits,"
+		    $as_echo "                             dst_raw0,"
+		    $as_echo "                             dst_order);"
+		    $as_echo "        TME_FB_XLAT_SKIP_DST(dst_fifo1_may_be_unaligned,"
+		    $as_echo "                             dst_fifo1,"
+		    $as_echo "                             dst_fifo1_next,"
+		    $as_echo "                             dst_fifo1_bits,"
+		    $as_echo "                             dst_raw1,"
+		    $as_echo "                             dst_order);"
+		    $as_echo "        dst_skip = FALSE;"
+		    $as_echo "      }"
 		fi
 	    fi
 
