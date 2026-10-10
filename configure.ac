@@ -748,17 +748,20 @@ AC_CHECK_DECLS(
 )
 CFLAGS="${old_CFLAGS}"
 
-dnl Checks for GLIB.
-AM_PATH_GLIB_2_0([], have_glib=yes, have_glib=no)
-if test "x$have_glib" = xyes; then
-  AC_DEFINE(HAVE_GLIB, [], [Define if you are compiling with GLIB.])
+dnl GLIB, GTK and SDL are found with pkg-config.
+m4_ifndef([PKG_PROG_PKG_CONFIG],
+  [m4_fatal([pkg.m4 not found: install pkg-config (or pkgconf) and rerun autoreconf])])
+PKG_PROG_PKG_CONFIG
+if test "x$PKG_CONFIG" = x; then
+  AC_MSG_ERROR([pkg-config not found: install pkg-config (or pkgconf)])
 fi
 
-TME_FB_XLAT_DST=
-dnl Checks for GTK.
-AM_PATH_GTK_3_0([], have_gtk=yes, have_gtk=no)
-AM_PATH_SDL2([], have_sdl=yes, have_sdl=no)
+dnl Checks for GLIB.
+PKG_CHECK_MODULES([GLIB], [glib-2.0], [],
+  [AC_MSG_ERROR([GLIB not found: install GLIB 2 (glib-2.0)])])
+AC_DEFINE(HAVE_GLIB, [], [Define if you are compiling with GLIB.])
 
+TME_FB_XLAT_DST=
 # if --with-tme-host-displays is given, characterize those given displays:
 AC_ARG_WITH(tme-host-displays,
 [  --with-tme-host-displays=DISPLAYS  support host displays with these display formats],
@@ -788,17 +791,19 @@ dnl Start the list of display host support.
 TME_DISPLAY_HOSTS=
 TME_FB_XLAT_DST="d32b32s0p32olml_r0xffff0000_g0xff00ff00_b0xff0000ff d24b32s0p32olml_r0xff0000_g0xff00_b0xff"
 
-if test "x$have_gtk" = xyes; then
-   if test "x${enable_gtk}" = xyes; then
-      TME_DISPLAY_HOSTS="gtk ${TME_DISPLAY_HOSTS}"
-   fi
+dnl Checks for GTK.
+if test "x${enable_gtk}" = xyes; then
+   PKG_CHECK_MODULES([GTK], [gtk+-3.0], [],
+     [AC_MSG_ERROR([GTK not found: install GTK 3 (gtk+-3.0), or leave gtk out of --enable-hosts])])
+   TME_DISPLAY_HOSTS="gtk ${TME_DISPLAY_HOSTS}"
 #   TME_FB_XLAT_DST="d32b32s0p32olml_r0xffff0000_g0xff00ff00_b0xff0000ff d24b32s0p32olml_r0xff0000_g0xff00_b0xff d16b16s0p32olml_r0xf800_g0x07e0_b0x001f d8b8s0p32olml_r0xff_g0xff_b0xff d1b1s0p32olml_r0x1_g0x1_b0x1"
 fi
 
-if test "x$have_sdl" = xyes; then
-   if test "x${enable_sdl}" = xyes; then
-      TME_DISPLAY_HOSTS="sdl ${TME_DISPLAY_HOSTS}"
-   fi
+dnl Checks for SDL.
+if test "x${enable_sdl}" = xyes; then
+   PKG_CHECK_MODULES([SDL], [sdl2], [],
+     [AC_MSG_ERROR([SDL not found: install SDL 2 (sdl2), or leave sdl out of --enable-hosts])])
+   TME_DISPLAY_HOSTS="sdl ${TME_DISPLAY_HOSTS}"
 fi
 
 have_rfb=no
@@ -1173,6 +1178,8 @@ dnl Configure for libtool.
 #AC_CONFIG_SUBDIRS(libltdl)
 LT_PREREQ([2.4])
 LT_CONFIG_LTDL_DIR([libltdl])
+m4_ifndef([LT_INIT],
+  [m4_fatal([libtool.m4 not found: install libtool and rerun autoreconf])])
 LT_INIT([dlopen,win32-dll])
 LT_LANG([Windows Resource])
 LTDL_INIT([recursive installable])
