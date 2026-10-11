@@ -304,16 +304,14 @@ _tme_sjlj_threads_dispatching_timeout(void)
        thread_timeout != NULL;
        thread_timeout = thread_timeout->timeout_next) {
 
-    /* if this timeout has not expired: */
-    if (thread_timeout->tme_sjlj_thread_timeout <= now)
-      /* move this thread to the dispatching list: */
-      _tme_sjlj_change_state(thread_timeout, TME_SJLJ_THREAD_STATE_DISPATCHING);
-    else if(tme_sjlj_thread_blocked.tme_sjlj_thread_timeout <= now ||
-	    thread_timeout->tme_sjlj_thread_timeout <
-	    tme_sjlj_thread_blocked.tme_sjlj_thread_timeout)
-      /* set the minimum timeout to wait: */
-      tme_sjlj_thread_blocked.tme_sjlj_thread_timeout =
-	thread_timeout->tme_sjlj_thread_timeout;
+    /* the list is sorted, so stop at the first timeout that hasn't
+       expired: */
+    if (thread_timeout->tme_sjlj_thread_timeout > now) {
+      break;
+    }
+
+    /* move this thread to the dispatching list: */
+    _tme_sjlj_change_state(thread_timeout, TME_SJLJ_THREAD_STATE_DISPATCHING);
   }
 }
 
@@ -436,13 +434,19 @@ tme_sjlj_threads_main_iter(void *unused)
 	    || tme_sjlj_main_events->max_event >= 0);
   }
 
-  /* otherwise, the timeout list is not empty: */
-  else if(tme_sjlj_thread_blocked.tme_sjlj_thread_timeout >
-	  (now = tme_thread_get_time())) {
-    now = tme_sjlj_thread_blocked.tme_sjlj_thread_timeout - now;
+  /* otherwise, the timeout list is not empty.  it's sorted, so wait
+     until the first timeout, or not at all if it has already
+     passed: */
+  else if (tme_sjlj_threads_timeout->tme_sjlj_thread_timeout >
+	   (now = tme_thread_get_time())) {
+    now = tme_sjlj_threads_timeout->tme_sjlj_thread_timeout - now;
     /* set the timeout time: */
     timeout.tv_sec = TME_TIME_GET_SEC(now);
     timeout.tv_usec = TME_TIME_GET_USEC(now % TME_FRAC_PER_SEC);
+  }
+  else {
+    timeout.tv_sec = 0;
+    timeout.tv_usec = 0;
   }
 
   /* if there are runnable threads, make this a poll: */
