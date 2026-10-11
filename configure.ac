@@ -858,15 +858,22 @@ AC_SUBST(TME_ETH_HOSTS)
 AC_MSG_RESULT($TME_ETH_HOSTS)
 
 dnl The host modules for programs to preopen.  These depend on what
-dnl was found above, so they aren't in tme-preopen.txt:
+dnl was found above, so they aren't in tme-preopen.txt.  automake
+dnl can't see the modules inside the substitution, so programs also
+dnl need TME_HOST_PREOPEN_DEPS to relink when one changes:
 TME_HOST_PREOPEN=
+TME_HOST_PREOPEN_DEPS=
 for tme_host in ${TME_DISPLAY_HOSTS}; do
-    TME_HOST_PREOPEN="${TME_HOST_PREOPEN} -dlopen ../host/display/${tme_host}/tme_host_${tme_host}.la"
+    TME_HOST_PREOPEN_DEPS="${TME_HOST_PREOPEN_DEPS} ../host/display/${tme_host}/tme_host_${tme_host}.la"
 done
 for tme_host in ${TME_ETH_HOSTS}; do
-    TME_HOST_PREOPEN="${TME_HOST_PREOPEN} -dlopen ../host/eth/${tme_host}/tme_host_${tme_host}.la"
+    TME_HOST_PREOPEN_DEPS="${TME_HOST_PREOPEN_DEPS} ../host/eth/${tme_host}/tme_host_${tme_host}.la"
+done
+for tme_module in ${TME_HOST_PREOPEN_DEPS}; do
+    TME_HOST_PREOPEN="${TME_HOST_PREOPEN} -dlopen ${tme_module}"
 done
 AC_SUBST(TME_HOST_PREOPEN)
+AC_SUBST(TME_HOST_PREOPEN_DEPS)
 
 AC_SYS_POSIX_TERMIOS
 

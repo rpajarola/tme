@@ -18,6 +18,7 @@ bin_PROGRAMS = tmesh
 tmesh_LDADD = libtmesh.la $(LDADD)
 tmesh_LDFLAGS = -dlpreopen force -dlopen self
 include $(top_srcdir)/tme-preopen.txt
+EXTRA_tmesh_DEPENDENCIES = $(TME_HOST_PREOPEN_DEPS)
 
 # with builtin modules, tmesh is linked with every module, and with
 # a copy of their index, so it needs no files to run.  linking
