@@ -2647,7 +2647,7 @@ for src_key in ${src_all}; do
 	$as_echo "        dst_fifo0_next |= (tme_letoh_u32(dst_fifo0) & (0xffffffff << dst_fifo0_bits));"
 	$as_echo "        dst_fifo0_next = tme_htole_u32(dst_fifo0_next);"
 	$as_echo "      }"
-	$as_echo "      *dst_raw0 = dst_fifo0;"
+	$as_echo "      *dst_raw0 = dst_fifo0_next;"
 	$as_echo "    }"
 	if test $scale = _d_; then
 	    $as_echo "    if (dst_fifo1_may_be_unaligned"
@@ -2661,7 +2661,7 @@ for src_key in ${src_all}; do
 	    $as_echo "        dst_fifo1_next |= (tme_letoh_u32(dst_fifo1) & (0xffffffff << dst_fifo1_bits));"
 	    $as_echo "        dst_fifo1_next = tme_htole_u32(dst_fifo1_next);"
 	    $as_echo "      }"
-	    $as_echo "      *dst_raw1 = dst_fifo1;"
+	    $as_echo "      *dst_raw1 = dst_fifo1_next;"
 	    $as_echo "    }"
 	fi
 
