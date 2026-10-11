@@ -29,9 +29,7 @@ EXTRA_DIST = m68k-impl.h \
 	$(BUILT_SOURCES) \
 	$(noinst_SCRIPTS:.sh=.m4)  \
 	m68k-execute.c \
-	m68k-iset-expand.pl \
-	m68k-iset.txt \
-	m68k-opmap-make.pl
+	m68k-iset.txt
 
 # default rule for regenerating the portable shell scripts from m4 descriptions
 $(noinst_SCRIPTS): %.sh: %.m4
@@ -42,12 +40,15 @@ m68k-auto.h: m68k-misc-auto.sh m68k-insns-auto.sh
 	$(SHELL) m68k-misc-auto.sh --header > $@
 	$(SHELL) m68k-insns-auto.sh --header >> $@
 
+# the program that makes m68k-opmap.c from m68k-iset.txt.  it runs at
+# build time, so it isn't installed:
+noinst_PROGRAMS = m68k-opmap-make
+m68k_opmap_make_SOURCES = m68k-opmap-make.c
+
 # target to make m68k-opmap.c:
-m68k-opmap.c: m68k-iset.txt m68k-iset-expand.pl m68k-opmap-make.pl
-	( $(PERL) $(srcdir)/m68k-iset-expand.pl m68000 < $(srcdir)/m68k-iset.txt ; \
-	  $(PERL) $(srcdir)/m68k-iset-expand.pl m68010 < $(srcdir)/m68k-iset.txt ; \
-	  $(PERL) $(srcdir)/m68k-iset-expand.pl m68020 < $(srcdir)/m68k-iset.txt ) | \
-	  $(PERL) $(srcdir)/m68k-opmap-make.pl > $@
+m68k-opmap.c: m68k-iset.txt m68k-opmap-make$(EXEEXT)
+	./m68k-opmap-make$(EXEEXT) $(srcdir)/m68k-iset.txt m68000 m68010 m68020 > $@.tmp
+	mv $@.tmp $@
 
 # target to make m68k-insns-auto.c:
 m68k-insns-auto.c: m68k-insns-auto.sh m68k-misc-auto.sh

@@ -43,7 +43,7 @@ Makefile
 /tme/tme.info
 /tme/version.texi
 
-# sources generated from .m4, .pl and .y files
+# sources generated from .m4 and .y files
 *-auto.c
 *-auto.h
 *-auto.sh
@@ -59,6 +59,7 @@ Makefile
 /serial/kb-maps.h
 
 # programs
+/ic/m68k/m68k-opmap-make
 /machine/sun/tme-sun-eeprom
 /machine/sun/tme-sun-idprom
 /tmesh/tmesh

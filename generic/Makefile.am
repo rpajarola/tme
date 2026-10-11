@@ -30,7 +30,7 @@ BUILT_SOURCES =	$(noinst_SCRIPTS:.sh=.c)
 
 CLEANFILES = $(noinst_SCRIPTS) $(BUILT_SOURCES)
 
-EXTRA_DIST = $(CLEANFILES) $(noinst_SCRIPTS:.sh=.m4) fb-xlat-auto.pl
+EXTRA_DIST = $(CLEANFILES) $(noinst_SCRIPTS:.sh=.m4)
 
 # default rule for regenerating the portable shell scripts from m4 descriptions
 $(noinst_SCRIPTS): %.sh: %.m4
@@ -41,17 +41,8 @@ float-auto.c bus-device-auto.c: %.c: %.sh
 	$(SHELL) $< > $@
 
 # target to make fb-xlat-auto.c:
-if USING_X
-fb-xlat-auto.c: %.c: %.sh %.in
-	cat $*.in | xargs $(SHELL) $< > $@
-
-fb-xlat-auto.in: %.in: %.pl
-	$(PERL) $< src $(TME_FB_XLAT_SRC) dst $(TME_FB_XLAT_DST) > $@ || \
-	echo "src $(TME_FB_XLAT_SRC) dst $(TME_FB_XLAT_DST)" > $@
-else
 fb-xlat-auto.c: %.c: %.sh
 	$(SHELL) $< src $(TME_FB_XLAT_SRC) dst $(TME_FB_XLAT_DST) > $@
-endif
 
 pkglib_LTLIBRARIES = tme_generic.la
 tme_generic_la_SOURCES = bus-el.c

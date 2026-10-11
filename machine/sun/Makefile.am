@@ -16,18 +16,9 @@ libtme_machine_sun_la_SOURCES = sun-mmu.c \
 libtme_machine_sun_la_LDFLAGS = -version-info 0:0:0
 libtme_machine_sun_la_LIBADD = $(top_builddir)/generic/libtme-generic.la
 
-bin_SCRIPTS = tme-sun-idprom tme-sun-eeprom
+bin_PROGRAMS = tme-sun-idprom tme-sun-eeprom
+tme_sun_idprom_SOURCES = tme-sun-idprom.c
+tme_sun_eeprom_SOURCES = tme-sun-eeprom.c
 
 examplesdir = $(pkgdatadir)/examples
 dist_examples_DATA = sun-keyboards.txt my-sun-macros.txt
-
-EXTRA_DIST = tme-sun-idprom.pl tme-sun-eeprom.pl
-
-# target to make tme-sun-idprom:
-tme-sun-idprom: tme-sun-idprom.pl
-	sed -e s%/usr/pkg/bin/perl%$(PERL)% < $(srcdir)/tme-sun-idprom.pl > $@
-
-# target to make tme-sun-eeprom:
-tme-sun-eeprom: tme-sun-eeprom.pl $(top_srcdir)/tools/tme-binary-struct.pl.in
-	cat $(top_srcdir)/tools/tme-binary-struct.pl.in $(srcdir)/tme-sun-eeprom.pl | \
-	sed -e s%/usr/pkg/bin/perl%$(PERL)% > $@

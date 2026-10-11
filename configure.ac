@@ -691,10 +691,6 @@ AC_SEARCH_LIBS([pthread_setschedparam], [pthread], [
 AC_DEFINE(HAVE_PTHREAD_SETSCHEDPARAM, [], [Define if you have pthread_setschedparam.])
 ])
 
-dnl Checks for perl.
-AC_PATH_PROGS(PERL, perl4.036 perl4 perl perl5, no)
-AC_SUBST(PERL)
-
 dnl Checks for AF_LINK.
 AC_MSG_CHECKING([for AF_LINK support])
 AC_EGREP_CPP(_tme_has_af_link,
@@ -1076,11 +1072,6 @@ AC_SUBST(TME_SERIAL_SUBDIRS)
 AC_SUBST(TME_SERIALS)
 AC_SUBST(TME_BUS_SUBDIRS)
 AC_SUBST(TME_FB_XLAT_SRC)
-
-dnl Checks for X11.
-AC_PATH_XTRA
-AX_PERL_MODULE_VERSION(X11::Protocol 0.56, [], no_x=yes)
-AM_CONDITIONAL([USING_X], [test "x${no_x}" = x])
 
 dnl Configure recode.
 dnl Make brackets safe to use.

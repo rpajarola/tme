@@ -9,17 +9,12 @@ libtme_display_la_SOURCES = display-mouse.c display-keyboard.c display.c display
 libtme_display_la_LDFLAGS = -version-info 0:0:0
 libtme_display_la_LIBADD = $(top_builddir)/generic/libtme-generic.la $(GTK_LIBS)
 
-EXTRA_DIST = keymap-make.pl keymap-def.h
+EXTRA_DIST = keymap-def.h
 
 BUILT_SOURCES = keymap.h
 CLEANFILES = keymap.h
-if USING_X
-keymap.h: keymap-make.pl keymap-def.h
-	  $(PERL) $< > $@ || cp $(srcdir)/keymap-def.h $@
-else
 keymap.h: keymap-def.h
 	  cp $< $@
-endif
 
 include $(top_srcdir)/modules
 
