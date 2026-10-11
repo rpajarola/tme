@@ -481,7 +481,12 @@ _tmesh_th(int *interactive)
     /* evaluate commands as they come in */
     _tmesh_eval();
     
-    if(_tmesh_io==NULL) break;
+    /* if all input has been read, we're done, as a shell is at EOF.
+       to keep running without reading commands, use
+       --noninteractive: */
+    if (_tmesh_io == NULL) {
+      exit(0);
+    }
     
     /* this command may have changed the current io, so reload: */
     io = _tmesh_io;

@@ -920,7 +920,12 @@ tmesh_new(const struct tmesh_support *support, const struct tmesh_io *first_io)
   /* start the io stack: */
   tmesh->tmesh_io_stack = tme_new0(struct tmesh_io_stack, 1);
   tmesh->tmesh_io_stack->tmesh_io_stack_io = *first_io;
-  
+
+  /* the io stack owns the names of its ios, and frees them when it
+     pops them: */
+  tmesh->tmesh_io_stack->tmesh_io_stack_io.tmesh_io_name
+    = tme_strdup(first_io->tmesh_io_name);
+
   /* create the root directory: */
   tmesh->tmesh_root = _tmesh_fs_mkdir(NULL, NULL);
 
