@@ -38,6 +38,7 @@ _TME_RCSID("$Id: posix-disk.c,v 1.6 2010/06/05 14:28:57 fredette Exp $");
 
 /* includes: */
 #include <tme/generic/disk.h>
+#include <tme/media.h>
 #include <tme/generic/bus.h>
 #include <fcntl.h>
 #include <stdlib.h>
@@ -146,9 +147,13 @@ struct tme_posix_disk {
   /* our flags: */
   int tme_posix_disk_flags;
 
-  /* the file descriptor: */
+  /* the file descriptor, and the name of the file: */
   tme_thread_handle_t tme_posix_disk_handle;
   int tme_posix_disk_fd;
+  char *tme_posix_disk_filename;
+
+  /* our media holder: */
+  struct tme_media tme_posix_disk_media;
 
   /* the stat buffer: */
   struct stat tme_posix_disk_stat;
@@ -764,6 +769,8 @@ _tme_posix_disk_open(struct tme_posix_disk *posix_disk,
 #ifndef HAVE_STRUCT_STAT_ST_BLKSIZE
   posix_disk->tme_posix_disk_block_size = block_size;
 #endif  
+  posix_disk->tme_posix_disk_filename = tme_strdup(filename);
+  tme_media_changed();
   return (TME_OK);
 }
 
@@ -783,6 +790,9 @@ _tme_posix_disk_close(struct tme_posix_disk *posix_disk)
   /* close the disk: */
   tme_thread_close(posix_disk->tme_posix_disk_handle);
   posix_disk->tme_posix_disk_handle = TME_INVALID_HANDLE;
+  tme_free(posix_disk->tme_posix_disk_filename);
+  posix_disk->tme_posix_disk_filename = NULL;
+  tme_media_changed();
 }
 
 /* our internal command function: */
@@ -923,6 +933,66 @@ _tme_posix_disk_command(struct tme_element *element,
   tme_mutex_unlock(&posix_disk->tme_posix_disk_mutex);
 
   return (rc);
+}
+
+/* this returns the name of the file loaded, if any: */
+static char **
+_tme_posix_disk_media_loaded(struct tme_media *media, int *_read_only)
+{
+  struct tme_posix_disk *posix_disk;
+  char **filenames;
+
+  posix_disk = (struct tme_posix_disk *) media->tme_media_element->tme_element_private;
+  filenames = NULL;
+  tme_mutex_lock(&posix_disk->tme_posix_disk_mutex);
+  if (posix_disk->tme_posix_disk_handle != TME_INVALID_HANDLE) {
+    filenames = tme_new(char *, 2);
+    filenames[0] = tme_strdup(posix_disk->tme_posix_disk_filename);
+    filenames[1] = NULL;
+  }
+
+  /* the flags remain after an unload, so this is how the next disk
+     should be loaded, too: */
+  *_read_only = ((posix_disk->tme_posix_disk_flags & TME_POSIX_DISK_FLAG_RO) != 0);
+  tme_mutex_unlock(&posix_disk->tme_posix_disk_mutex);
+  return (filenames);
+}
+
+/* this loads a disk from a file: */
+static int
+_tme_posix_disk_media_load(struct tme_media *media,
+			   const char * const *filenames,
+			   int read_only,
+			   char **_output)
+{
+  const char *args[5];
+  int arg_i;
+
+  if (filenames[0] == NULL || filenames[1] != NULL) {
+    tme_output_append_error(_output, _("a disk is loaded from one file"));
+    return (EINVAL);
+  }
+  arg_i = 0;
+  args[arg_i++] = (media->tme_media_name != NULL ? media->tme_media_name : "disk");
+  args[arg_i++] = "load";
+  args[arg_i++] = filenames[0];
+  if (read_only) {
+    args[arg_i++] = "read-only";
+  }
+  args[arg_i] = NULL;
+  return (_tme_posix_disk_command(media->tme_media_element, args, _output));
+}
+
+/* this unloads a disk: */
+static int
+_tme_posix_disk_media_unload(struct tme_media *media, char **_output)
+{
+  const char *args[3];
+
+  args[0] = (media->tme_media_name != NULL ? media->tme_media_name : "disk");
+  args[1] = "unload";
+  args[2] = NULL;
+  return (_tme_posix_disk_command(media->tme_media_element, args, _output));
 }
 
 /* this breaks a posix disk connection: */
@@ -1146,6 +1216,14 @@ TME_ELEMENT_SUB_NEW_DECL(tme_host_posix,disk) {
   element->tme_element_private = posix_disk;
   element->tme_element_connections_new = _tme_posix_disk_connections_new;
   element->tme_element_command = _tme_posix_disk_command;
+
+  /* register our media holder: */
+  posix_disk->tme_posix_disk_media.tme_media_element = element;
+  posix_disk->tme_posix_disk_media.tme_media_type = TME_MEDIA_TYPE_DISK;
+  posix_disk->tme_posix_disk_media.tme_media_loaded = _tme_posix_disk_media_loaded;
+  posix_disk->tme_posix_disk_media.tme_media_load = _tme_posix_disk_media_load;
+  posix_disk->tme_posix_disk_media.tme_media_unload = _tme_posix_disk_media_unload;
+  tme_media_register(&posix_disk->tme_posix_disk_media);
 
   return (TME_OK);
 }

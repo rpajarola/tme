@@ -28,6 +28,7 @@ libtme_la_SOURCES = misc-host.c \
 	event.c \
 	threads.c \
 	element.c \
+	media.c \
 	log.c \
 	hash.c \
 	token.c \

@@ -9,6 +9,7 @@ pkginclude_HEADERS = memory.h \
 	common.h \
 	connection.h \
 	element.h \
+	media.h \
 	event.h \
 	threads.h \
 	threads-posix.h \

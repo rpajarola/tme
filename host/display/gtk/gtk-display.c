@@ -47,8 +47,17 @@ _tme_gtk_display_bell(struct tme_gdk_display *display) {
 
 static int
 _tme_gtk_display_update(struct tme_display *display) {
+  struct tme_screen *screen;
+
   while (gtk_events_pending ())
     gtk_main_iteration ();
+
+  /* update the media menus and status, if the media have changed: */
+  for (screen = display->tme_display_screens;
+       screen != NULL;
+       screen = screen->tme_screen_next) {
+    _tme_gtk_media_update((struct tme_gtk_screen *) screen);
+  }
   return TME_OK;
 }
 
@@ -446,6 +455,9 @@ _tme_gtk_screen_new(struct tme_gdk_display *display,
   //  gtk_widget_show(menu_item);
   gtk_menu_item_set_submenu(GTK_MENU_ITEM(menu_item), menu);
   gtk_menu_shell_append(GTK_MENU_SHELL(menu_bar), menu_item);
+
+  /* create the Media menu, and the media status: */
+  _tme_gtk_media_attach(screen, menu_bar);
 
   /* create the Gtkframe for the framebuffer area: */
   screen->tme_gtk_screen_gtkframe = gtk_drawing_area_new();

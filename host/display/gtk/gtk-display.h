@@ -95,6 +95,12 @@ struct tme_gtk_screen {
      that turns mouse mode off: */
   unsigned int tme_gtk_screen_mouse_mods;
 
+  /* the Media menu item, the media status label, and the media
+     generation they show: */
+  GtkWidget *tme_gtk_screen_media_menu_item;
+  GtkWidget *tme_gtk_screen_media_label;
+  unsigned long tme_gtk_screen_media_generation;
+
 };
 
 /* a menu item: */
@@ -110,6 +116,8 @@ void _tme_gtk_keyboard_attach _TME_P((struct tme_gtk_screen *));
 void _tme_gtk_mouse_attach _TME_P((struct tme_gtk_screen *));
 void _tme_gtk_mouse_mode_off _TME_P((struct tme_gtk_screen *, guint32));
 void _tme_gtk_mouse_key_event _TME_P((struct tme_gtk_screen *, GdkEventKey *));
+void _tme_gtk_media_attach _TME_P((struct tme_gtk_screen *, GtkWidget *));
+void _tme_gtk_media_update _TME_P((struct tme_gtk_screen *));
 gint _tme_display_enter_focus _TME_P((GtkWidget *, GdkEvent *, gpointer));
 GtkWidget *_tme_display_menu_radio _TME_P((struct tme_gtk_screen *, struct tme_display_menu_item *, int num_items));
 

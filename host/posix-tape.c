@@ -38,6 +38,7 @@ _TME_RCSID("$Id: posix-tape.c,v 1.7 2006/09/30 12:35:01 fredette Exp $");
 
 /* includes: */
 #include <tme/generic/tape.h>
+#include <tme/media.h>
 #include <tme/threads.h>
 #include <fcntl.h>
 #include <stdlib.h>
@@ -104,6 +105,9 @@ struct tme_posix_tape {
 
   /* the tape segments: */
   struct tme_posix_tape_segment *tme_posix_tape_segments;
+
+  /* our media holder: */
+  struct tme_media tme_posix_tape_media;
 
   /* the connection: */
   struct tme_tape_connection *tme_posix_tape_connection;
@@ -1149,6 +1153,7 @@ __tme_posix_tape_command(struct tme_posix_tape *posix_tape,
       control = _tme_posix_tape_control_new(posix_tape);
       control->tme_posix_tape_control_which = TME_TAPE_CONTROL_LOAD;
       new_callouts |= TME_POSIX_TAPE_CALLOUT_CONTROL;
+      tme_media_changed();
     }
   }
 
@@ -1174,6 +1179,7 @@ __tme_posix_tape_command(struct tme_posix_tape *posix_tape,
 
     /* unload the tape: */
     _tme_posix_tape_unload(posix_tape);
+    tme_media_changed();
 
     /* call out an UNLOAD control: */
     control = _tme_posix_tape_control_new(posix_tape);
@@ -1204,6 +1210,82 @@ __tme_posix_tape_command(struct tme_posix_tape *posix_tape,
 }
 
 /* our command function: */
+static int _tme_posix_tape_command _TME_P((struct tme_element *,
+					  const char * const *,
+					  char **));
+
+/* this returns the names of the tape segment files loaded, if any: */
+static char **
+_tme_posix_tape_media_loaded(struct tme_media *media, int *_read_only)
+{
+  struct tme_posix_tape *posix_tape;
+  struct tme_posix_tape_segment *segment;
+  char **filenames;
+  int count;
+
+  posix_tape = (struct tme_posix_tape *) media->tme_media_element->tme_element_private;
+  filenames = NULL;
+  tme_mutex_lock(&posix_tape->tme_posix_tape_mutex);
+  if (posix_tape->tme_posix_tape_segments != NULL) {
+    count = 0;
+    for (segment = posix_tape->tme_posix_tape_segments;
+	 segment != NULL;
+	 segment = segment->tme_posix_tape_segment_next) {
+      count++;
+    }
+    filenames = tme_new(char *, count + 1);
+    count = 0;
+    for (segment = posix_tape->tme_posix_tape_segments;
+	 segment != NULL;
+	 segment = segment->tme_posix_tape_segment_next) {
+      filenames[count++] = tme_strdup(segment->tme_posix_tape_segment_filename);
+    }
+    filenames[count] = NULL;
+  }
+  *_read_only = ((posix_tape->tme_posix_tape_flags & TME_POSIX_TAPE_FLAG_RO) != 0);
+  tme_mutex_unlock(&posix_tape->tme_posix_tape_mutex);
+  return (filenames);
+}
+
+/* this loads a tape from one or more segment files: */
+static int
+_tme_posix_tape_media_load(struct tme_media *media,
+			   const char * const *filenames,
+			   int read_only,
+			   char **_output)
+{
+  const char **args;
+  int count, arg_i, rc;
+
+  for (count = 0; filenames[count] != NULL; count++);
+  args = tme_new(const char *, count + 4);
+  arg_i = 0;
+  args[arg_i++] = (media->tme_media_name != NULL ? media->tme_media_name : "tape");
+  args[arg_i++] = "load";
+  if (read_only) {
+    args[arg_i++] = "read-only";
+  }
+  for (count = 0; filenames[count] != NULL; count++) {
+    args[arg_i++] = filenames[count];
+  }
+  args[arg_i] = NULL;
+  rc = _tme_posix_tape_command(media->tme_media_element, args, _output);
+  tme_free(args);
+  return (rc);
+}
+
+/* this unloads a tape: */
+static int
+_tme_posix_tape_media_unload(struct tme_media *media, char **_output)
+{
+  const char *args[3];
+
+  args[0] = (media->tme_media_name != NULL ? media->tme_media_name : "tape");
+  args[1] = "unload";
+  args[2] = NULL;
+  return (_tme_posix_tape_command(media->tme_media_element, args, _output));
+}
+
 static int
 _tme_posix_tape_command(struct tme_element *element,
 			const char * const * args, 
@@ -1383,6 +1465,14 @@ TME_ELEMENT_SUB_NEW_DECL(tme_host_posix,tape) {
   element->tme_element_private = posix_tape;
   element->tme_element_connections_new = _tme_posix_tape_connections_new;
   element->tme_element_command = _tme_posix_tape_command;
+
+  /* register our media holder: */
+  posix_tape->tme_posix_tape_media.tme_media_element = element;
+  posix_tape->tme_posix_tape_media.tme_media_type = TME_MEDIA_TYPE_TAPE;
+  posix_tape->tme_posix_tape_media.tme_media_loaded = _tme_posix_tape_media_loaded;
+  posix_tape->tme_posix_tape_media.tme_media_load = _tme_posix_tape_media_load;
+  posix_tape->tme_posix_tape_media.tme_media_unload = _tme_posix_tape_media_unload;
+  tme_media_register(&posix_tape->tme_posix_tape_media);
 
   return (TME_OK);
 }
