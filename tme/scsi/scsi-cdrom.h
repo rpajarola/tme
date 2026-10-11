@@ -198,11 +198,11 @@ _TME_RCSID("$Id: scsi-cdrom.h,v 1.2 2009/09/26 13:06:47 fredette Exp $");
 #define tme_scsi_cdrom_connections tme_scsi_disk_connections
 
 /* prototypes: */
-#define tme_scsi_cdrom_connections_new tme_scsi_disk_connections_new
 #define tme_scsi_cdrom_connection_make tme_scsi_disk_connection_make
 #define tme_scsi_cdrom_connection_break tme_scsi_disk_connection_break
 #define tme_scsi_cdrom_control tme_scsi_disk_control
 int tme_scsi_cdrom_tme_init _TME_P((struct tme_scsi_cdrom *));
+int tme_scsi_cdrom_connections_new _TME_P((struct tme_element *, const char * const *, struct tme_connection **, char **));
 
 _TME_SCSI_DEVICE_CDB_P(tme_scsi_cdrom_cdb_inquiry);
 _TME_SCSI_DEVICE_CDB_P(tme_scsi_cdrom_cdb_read_toc);

@@ -310,8 +310,10 @@ _tme_gtk_media_update(struct tme_gtk_screen *screen)
        media != NULL;
        media = media->tme_media_next) {
 
-    /* skip media holders that haven't been named yet: */
-    if (media->tme_media_name == NULL) {
+    /* skip media holders that haven't been named yet, and ones
+       whose media isn't removable, like hard disks: */
+    if (media->tme_media_name == NULL
+	|| !media->tme_media_removable) {
       continue;
     }
 

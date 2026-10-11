@@ -61,6 +61,10 @@ struct tme_disk_connection {
   /* total size: */
   union tme_value64 tme_disk_connection_size;
 
+  /* flags: */
+  unsigned int tme_disk_connection_flags;
+#define TME_DISK_CONNECTION_FLAG_REMOVABLE	TME_BIT(0)	/* removable media, like a CD-ROM */
+
   /* this is called to get a buffer corresponding to a range on the
      device, for reading: */
   int (*tme_disk_connection_read) _TME_P((struct tme_disk_connection *,

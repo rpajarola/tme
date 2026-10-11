@@ -48,6 +48,30 @@ _TME_RCSID("$Id: scsi-cdrom.c,v 1.3 2009/09/26 13:07:39 fredette Exp $");
 
 /* globals: */
 
+/* this makes new connection sides for a CD-ROM.  they are the same
+   as for a disk, except that the media is removable: */
+int
+tme_scsi_cdrom_connections_new(struct tme_element *element,
+			       const char * const *args,
+			       struct tme_connection **_conns,
+			       char **_output)
+{
+  struct tme_connection *conns_old, *conn;
+  int rc;
+
+  conns_old = *_conns;
+  rc = tme_scsi_disk_connections_new(element, args, _conns, _output);
+  if (rc == TME_OK) {
+    for (conn = *_conns; conn != conns_old; conn = conn->tme_connection_next) {
+      if (conn->tme_connection_type == TME_CONNECTION_DISK) {
+	((struct tme_disk_connection *) conn)->tme_disk_connection_flags
+	  |= TME_DISK_CONNECTION_FLAG_REMOVABLE;
+      }
+    }
+  }
+  return (rc);
+}
+
 /* the list of cdroms that we emulate: */
 const struct {
 

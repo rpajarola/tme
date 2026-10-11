@@ -1030,6 +1030,12 @@ _tme_posix_disk_connection_make(struct tme_connection *conn,
     conn_disk = (struct tme_disk_connection *) conn->tme_connection_other;
     posix_disk->tme_posix_disk_connection = conn_disk;
 
+    /* our media is removable if the device we hold it for says so: */
+    posix_disk->tme_posix_disk_media.tme_media_removable
+      = ((conn_disk->tme_disk_connection_flags
+	  & TME_DISK_CONNECTION_FLAG_REMOVABLE) != 0);
+    tme_media_changed();
+
     /* unlock the mutex: */
     tme_mutex_unlock(&posix_disk->tme_posix_disk_mutex);
   }

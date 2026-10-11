@@ -1469,6 +1469,7 @@ TME_ELEMENT_SUB_NEW_DECL(tme_host_posix,tape) {
   /* register our media holder: */
   posix_tape->tme_posix_tape_media.tme_media_element = element;
   posix_tape->tme_posix_tape_media.tme_media_type = TME_MEDIA_TYPE_TAPE;
+  posix_tape->tme_posix_tape_media.tme_media_removable = TRUE;
   posix_tape->tme_posix_tape_media.tme_media_loaded = _tme_posix_tape_media_loaded;
   posix_tape->tme_posix_tape_media.tme_media_load = _tme_posix_tape_media_load;
   posix_tape->tme_posix_tape_media.tme_media_unload = _tme_posix_tape_media_unload;

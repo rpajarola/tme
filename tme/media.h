@@ -49,8 +49,10 @@ struct tme_media {
   struct tme_element *tme_media_element;
   char *tme_media_name;
 
-  /* the media type: */
+  /* the media type, and nonzero iff the media is removable.  a user
+     interface shouldn't offer to load or unload media that isn't: */
   unsigned int tme_media_type;
+  int tme_media_removable;
 
   /* this returns a NULL-terminated array of the names of the files
      loaded, which the caller frees with tme_free_string_array(names,
