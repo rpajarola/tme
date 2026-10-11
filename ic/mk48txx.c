@@ -82,6 +82,14 @@ _TME_RCSID("$Id: mk48txx.c,v 1.4 2010/06/05 14:54:10 fredette Exp $");
 /* bits in the seconds register: */
 #define TME_MK48TXX_SEC_STOP	TME_BIT(7)	/* all stop */
 
+/* bits in the hour register: */
+#define TME_MK48TXX_HOUR_KICKSTART TME_BIT(7)	/* kick start */
+
+/* the states after a kickstart: */
+#define TME_MK48TXX_KICKSTART_NONE	(0)	/* no kickstart */
+#define TME_MK48TXX_KICKSTART_KICKED	(1)	/* waiting for a seconds read */
+#define TME_MK48TXX_KICKSTART_AHEAD	(2)	/* running ahead */
+
 #define TME_MK48TXX_LOG_HANDLE(am) (&(am)->tme_mk48txx_element->tme_element_log_handle)
 
 /* structures: */
@@ -111,6 +119,11 @@ struct tme_mk48txx {
 
   /* if nonzero, the internal time-of-day needs to be updated: */
   tme_uint8_t tme_mk48txx_tod_update;
+
+  /* the kickstart state, and while running ahead, the time that the
+     clock is held at until the real time catches up: */
+  unsigned int tme_mk48txx_kickstart;
+  tme_time_t tme_mk48txx_kickstart_until;
 };
 
 /* the mk48txx bus router: */
@@ -146,6 +159,9 @@ _tme_mk48txx_reset(struct tme_mk48txx *mk48txx)
   /* start the clock running normally: */
   mk48txx->tme_mk48txx_regs[TME_MK48TXX_REG_WDAY] = 0;
   mk48txx->tme_mk48txx_regs[TME_MK48TXX_REG_SEC] = !TME_MK48TXX_SEC_STOP;
+
+  /* there has been no kickstart: */
+  mk48txx->tme_mk48txx_kickstart = TME_MK48TXX_KICKSTART_NONE;
 }
 
 /* the mk48txx bus cycle handler: */
@@ -183,6 +199,29 @@ _tme_mk48txx_bus_cycle(void *_mk48txx, struct tme_bus_cycle *cycle_init)
 
     /* sample the time of day: */
     now = tme_thread_get_time();
+
+    /* a kickstart restarts a stopped oscillator, and the only thing
+       that does one is a self-test, like the SPARCstation PROM's,
+       that then polls the seconds register, expecting it to tick
+       within a delay loop that takes over a second on the real
+       hardware but only milliseconds here.  so after a kickstart,
+       the first seconds read shows the real time, and then the clock
+       is held at the start of the next second until the real time
+       catches up with it: */
+    if (__tme_predict_false(mk48txx->tme_mk48txx_kickstart
+			    != TME_MK48TXX_KICKSTART_NONE)) {
+      if (mk48txx->tme_mk48txx_kickstart
+	  == TME_MK48TXX_KICKSTART_KICKED) {
+	mk48txx->tme_mk48txx_kickstart_until
+	  = TME_TIME_SET_SEC(TME_TIME_GET_SEC(now) + 1);
+      }
+      else if (now < mk48txx->tme_mk48txx_kickstart_until) {
+	now = mk48txx->tme_mk48txx_kickstart_until;
+      }
+      else {
+	mk48txx->tme_mk48txx_kickstart = TME_MK48TXX_KICKSTART_NONE;
+      }
+    }
     now_date = tme_time_get_date(now, &now_date_buffer);
 
     /* put the time-of-day into the registers: */
@@ -237,6 +276,12 @@ _tme_mk48txx_bus_cycle(void *_mk48txx, struct tme_bus_cycle *cycle_init)
     case TME_MK48TXX_REG_DAY:
     case TME_MK48TXX_REG_YEAR:
 
+      /* note a kickstart: */
+      if (reg == TME_MK48TXX_REG_HOUR
+	  && (value & TME_MK48TXX_HOUR_KICKSTART)) {
+	mk48txx->tme_mk48txx_kickstart = TME_MK48TXX_KICKSTART_KICKED;
+      }
+
       /* flag that the time-of-day needs to be updated: */
       mk48txx->tme_mk48txx_tod_update = TRUE;
 
@@ -276,9 +321,18 @@ _tme_mk48txx_bus_cycle(void *_mk48txx, struct tme_bus_cycle *cycle_init)
     /* dispatch on the register: */
     switch (reg) {
 
+    case TME_MK48TXX_REG_SEC:
+
+      /* after a kickstart, start running ahead once the seconds have
+	 been read: */
+      if (mk48txx->tme_mk48txx_kickstart
+	  == TME_MK48TXX_KICKSTART_KICKED) {
+	mk48txx->tme_mk48txx_kickstart = TME_MK48TXX_KICKSTART_AHEAD;
+      }
+      /* FALLTHROUGH */
+
     case TME_MK48TXX_REG_HOUR:
     case TME_MK48TXX_REG_MIN:
-    case TME_MK48TXX_REG_SEC:
     case TME_MK48TXX_REG_MON:
     case TME_MK48TXX_REG_DAY:
     case TME_MK48TXX_REG_YEAR:
