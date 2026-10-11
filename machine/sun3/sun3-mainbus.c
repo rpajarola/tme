@@ -176,6 +176,12 @@ _tme_sun3_bus_signal(struct tme_bus_connection *conn_bus_raiser, unsigned int si
 	return (TME_OK);
       }
 
+      /* reset clears the interrupt register.  the PROM's "k 2"
+	 executes RESET and then reruns its power-up code with the
+	 clock NMI still enabled and no vector table set up yet: */
+      sun3->tme_sun3_ints = 0;
+      _tme_sun3_ipl_check(sun3);
+
       /* propagate this reset edge to all busses: */
       (*sun3->tme_sun3_obio->tme_bus_signal)
 	(sun3->tme_sun3_obio,
