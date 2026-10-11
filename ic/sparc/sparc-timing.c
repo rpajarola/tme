@@ -655,8 +655,13 @@ _tme_sparc_timing_loop_start(struct tme_sparc *ic,
     ic->tme_sparc_timing_loop_finish = cycles_finish;
 
     /* if the number of cycles to spin is small enough that we should
-       truly spin, instead of yield: */
-    if (cycles_scaled_max
+       truly spin, instead of yield.  with cooperative threads,
+       nothing else runs while we spin, and a guest that keeps
+       calling a short delay (like the SPARCstation PROM waiting for
+       a RARP reply) would starve everything else, so we always
+       yield: */
+    if (!tme_thread_cooperative()
+	&& cycles_scaled_max
 	<= (ic->tme_sparc_cycles_scaled_per_usec
 	    * TME_SPARC_TIMING_SPIN_USEC_MAX)) {
 
