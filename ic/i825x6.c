@@ -764,6 +764,132 @@ _tme_i825x6_chunks_mem_tx(struct tme_ethernet_frame_chunk *frame_chunks,
   }
 }
 
+/* this transmits any frame from the current Transmit command into
+   the given frame chunks, which may be NULL to discard it.  this must
+   be called with the mutex held, and it returns the length of the
+   frame, or a negative error: */
+static int
+_tme_i825x6_transmit(struct tme_i825x6 *i825x6,
+		     struct tme_ethernet_frame_chunk *frame_chunks)
+{
+  struct tme_ethernet_frame_chunk frame_chunk_buffer;
+  tme_uint32_t tbd_address, tb_address;
+  tme_uint16_t eof_size;
+  tme_uint16_t c_b_ok_a;
+  tme_uint16_t value16;
+  tme_uint32_t value32;
+  int rc, err;
+  int length;
+
+  /* start our local copy of the caller's frame chunks: */
+  if (frame_chunks != NULL) {
+    frame_chunk_buffer = *frame_chunks;
+  }
+  else {
+    frame_chunk_buffer.tme_ethernet_frame_chunk_bytes_count = 0;
+  }
+  frame_chunks = &frame_chunk_buffer;
+
+  /* assume that we will have no packet to transmit: */
+  length = 0;
+
+  /* if we have a packet to transmit: */
+  if ((i825x6->tme_i825x6_el_s_i_cmd
+       & TME_I825X6_CB_CMD_MASK)
+      == TME_I825X6_CB_CMD_TRANSMIT) {
+
+    /* assume that we will succeed: */
+    err = TME_OK;
+    do {
+
+      /* a helper macro for DMAing and copying data into chunks: */
+#define CHUNKS_DMA_TX(addr, size)						\
+      err = _tme_i825x6_chunks_dma_tx(i825x6, frame_chunks, (addr), (size));	\
+      if (err != TME_OK) break;							\
+      length += size
+#define CHUNKS_MEM_TX(data, size)						\
+      _tme_i825x6_chunks_mem_tx(frame_chunks, (data), (size));			\
+      length += size
+
+      /* if AL-LOC is set to zero, add the Ethernet/802.3 MAC header: */
+      if (i825x6->tme_i825x6_al_loc == 0) {
+
+	/* the destination address: */
+	CHUNKS_DMA_TX(i825x6->tme_i825x6_cb_address + TME_I82586_TCB_ADDR_DEST,
+		      TME_ETHERNET_ADDR_SIZE);
+
+	/* our source address (our Individual Address): */
+	CHUNKS_MEM_TX(&i825x6->tme_i825x6_addresses[TME_ETHERNET_ADDR_SIZE],
+		      TME_ETHERNET_ADDR_SIZE);
+
+	/* the length field: */
+	CHUNKS_DMA_TX(i825x6->tme_i825x6_cb_address + TME_I82586_TCB_LENGTH,
+		      TME_ETHERNET_LENGTH_SIZE);
+      }
+
+      /* the transmit buffers: */
+      TME_I825X6_READ16((i825x6->tme_i825x6_cb_address
+			 + TME_I82586_TCB_TBD_OFFSET),
+			tbd_address);
+      for (; tbd_address != 0xffff; ) {
+	tbd_address += i825x6->tme_i825x6_scb_base;
+
+	TME_I825X6_READ16((tbd_address
+			   + TME_I82586_TBD_EOF_SIZE),
+			  eof_size);
+	TME_I82586_READ24((tbd_address
+			   + TME_I82586_TBD_TB_ADDRESS),
+			  tb_address);
+
+	/* the transmit buffer contents: */
+	CHUNKS_DMA_TX(tb_address,
+		      (eof_size & TME_I82586_TBD_SIZE_MASK));
+
+	/* the next transmit buffer: */
+	if (eof_size & TME_I82586_TBD_EOF) {
+	  break;
+	}
+	TME_I825X6_READ16((tbd_address
+			   + TME_I82586_TBD_TBD_OFFSET),
+			  tbd_address);
+      }
+
+#undef CHUNKS_DMA_TX
+#undef CHUNKS_MEM_TX
+  
+    } while (/* CONSTCOND */ 0);
+
+    /* get the CB status word and clear all of the transmit status bits: */
+    c_b_ok_a
+      = (i825x6->tme_i825x6_c_b_ok_a
+	 & ~TME_I825X6_TCB_STATUS_MASK);
+  
+    /* if we got a bus error: */
+    if (err != TME_OK) {
+      
+      /* set the DMA underrun transmit status bit: */
+      c_b_ok_a |= TME_I825X6_TCB_STATUS_UNDERRUN;
+
+      /* return an error to our caller: */
+      length = -ENOENT;
+    }
+
+    /* update the CB status word: */
+    i825x6->tme_i825x6_c_b_ok_a = c_b_ok_a;
+
+    /* run the Command Unit: */
+    i825x6->tme_i825x6_callout_flags |= TME_I825X6_CALLOUT_CU;
+
+    /* we no longer have a packet to transmit: */
+    i825x6->tme_i825x6_el_s_i_cmd
+      = ((i825x6->tme_i825x6_el_s_i_cmd
+	  & ~TME_I825X6_CB_CMD_MASK)
+	 | TME_I825X6_CB_CMD_NOP);
+  }
+
+  return (length);
+}
+
 /* this is called to handle a Channel Attention (CA) callout: */
 static tme_uint16_t
 _tme_i825x6_callout_ca(struct tme_i825x6 *i825x6, tme_uint16_t stat_cus_rus_t)
@@ -1616,18 +1742,29 @@ _tme_i825x6_callout(struct tme_i825x6 *i825x6, int new_callouts)
 	ctrl |= TME_ETHERNET_CTRL_OK_READ;
       }
 
-      /* unlock the mutex: */
-      tme_mutex_unlock(&i825x6->tme_i825x6_mutex);
+      /* if there is no Ethernet connection, any frame being
+	 transmitted goes nowhere, as on a cable with nothing else on
+	 it.  otherwise, the Transmit command would never complete: */
+      if (conn_eth == NULL) {
+	if (ctrl & TME_ETHERNET_CTRL_OK_READ) {
+	  _tme_i825x6_transmit(i825x6, NULL);
+	}
+	rc = TME_OK;
+      }
+
+      else {
+
+	/* unlock the mutex: */
+	tme_mutex_unlock(&i825x6->tme_i825x6_mutex);
       
-      /* do the callout: */
-      rc = (conn_eth != NULL
-	    ? ((*conn_eth->tme_ethernet_connection_ctrl)
-	       (conn_eth,
-		ctrl))
-	    : TME_OK);
+	/* do the callout: */
+	rc = ((*conn_eth->tme_ethernet_connection_ctrl)
+	      (conn_eth,
+	       ctrl));
 	
-      /* lock the mutex: */
-      tme_mutex_lock(&i825x6->tme_i825x6_mutex);
+	/* lock the mutex: */
+	tme_mutex_lock(&i825x6->tme_i825x6_mutex);
+      }
       
       /* if the callout was unsuccessful, remember that at some later
 	 time this callout should be attempted again: */
@@ -1901,133 +2038,19 @@ _tme_i825x6_read(struct tme_ethernet_connection *conn_eth,
 		 unsigned int flags)
 {
   struct tme_i825x6 *i825x6;
-  int new_callouts;
-  struct tme_ethernet_frame_chunk frame_chunk_buffer;
-  tme_uint32_t tbd_address, tb_address;
-  tme_uint16_t eof_size;
-  tme_uint16_t c_b_ok_a;
-  tme_uint16_t value16;
-  tme_uint32_t value32;
-  int rc, err;
   int length;
 
   /* recover our data structures: */
   i825x6 = conn_eth->tme_ethernet_connection.tme_connection_element->tme_element_private;
 
-  /* assume that we won't need any new callouts: */
-  new_callouts = 0;
-
-  /* start our local copy of the caller's frame chunks: */
-  if (frame_chunks != NULL) {
-    frame_chunk_buffer = *frame_chunks;
-  }
-  else {
-    frame_chunk_buffer.tme_ethernet_frame_chunk_bytes_count = 0;
-  }
-  frame_chunks = &frame_chunk_buffer;
-
   /* lock our mutex: */
   tme_mutex_lock(&i825x6->tme_i825x6_mutex);
 
-  /* assume that we will have no packet to transmit: */
-  length = 0;
-
-  /* if we have a packet to transmit: */
-  if ((i825x6->tme_i825x6_el_s_i_cmd
-       & TME_I825X6_CB_CMD_MASK)
-      == TME_I825X6_CB_CMD_TRANSMIT) {
-
-    /* assume that we will succeed: */
-    err = TME_OK;
-    do {
-
-      /* a helper macro for DMAing and copying data into chunks: */
-#define CHUNKS_DMA_TX(addr, size)						\
-      err = _tme_i825x6_chunks_dma_tx(i825x6, frame_chunks, (addr), (size));	\
-      if (err != TME_OK) break;							\
-      length += size
-#define CHUNKS_MEM_TX(data, size)						\
-      _tme_i825x6_chunks_mem_tx(frame_chunks, (data), (size));			\
-      length += size
-
-      /* if AL-LOC is set to zero, add the Ethernet/802.3 MAC header: */
-      if (i825x6->tme_i825x6_al_loc == 0) {
-
-	/* the destination address: */
-	CHUNKS_DMA_TX(i825x6->tme_i825x6_cb_address + TME_I82586_TCB_ADDR_DEST,
-		      TME_ETHERNET_ADDR_SIZE);
-
-	/* our source address (our Individual Address): */
-	CHUNKS_MEM_TX(&i825x6->tme_i825x6_addresses[TME_ETHERNET_ADDR_SIZE],
-		      TME_ETHERNET_ADDR_SIZE);
-
-	/* the length field: */
-	CHUNKS_DMA_TX(i825x6->tme_i825x6_cb_address + TME_I82586_TCB_LENGTH,
-		      TME_ETHERNET_LENGTH_SIZE);
-      }
-
-      /* the transmit buffers: */
-      TME_I825X6_READ16((i825x6->tme_i825x6_cb_address
-			 + TME_I82586_TCB_TBD_OFFSET),
-			tbd_address);
-      for (; tbd_address != 0xffff; ) {
-	tbd_address += i825x6->tme_i825x6_scb_base;
-
-	TME_I825X6_READ16((tbd_address
-			   + TME_I82586_TBD_EOF_SIZE),
-			  eof_size);
-	TME_I82586_READ24((tbd_address
-			   + TME_I82586_TBD_TB_ADDRESS),
-			  tb_address);
-
-	/* the transmit buffer contents: */
-	CHUNKS_DMA_TX(tb_address,
-		      (eof_size & TME_I82586_TBD_SIZE_MASK));
-
-	/* the next transmit buffer: */
-	if (eof_size & TME_I82586_TBD_EOF) {
-	  break;
-	}
-	TME_I825X6_READ16((tbd_address
-			   + TME_I82586_TBD_TBD_OFFSET),
-			  tbd_address);
-      }
-
-#undef CHUNKS_DMA_TX
-#undef CHUNKS_MEM_TX
-  
-    } while (/* CONSTCOND */ 0);
-
-    /* get the CB status word and clear all of the transmit status bits: */
-    c_b_ok_a
-      = (i825x6->tme_i825x6_c_b_ok_a
-	 & ~TME_I825X6_TCB_STATUS_MASK);
-  
-    /* if we got a bus error: */
-    if (err != TME_OK) {
-      
-      /* set the DMA underrun transmit status bit: */
-      c_b_ok_a |= TME_I825X6_TCB_STATUS_UNDERRUN;
-
-      /* return an error to our caller: */
-      length = -ENOENT;
-    }
-
-    /* update the CB status word: */
-    i825x6->tme_i825x6_c_b_ok_a = c_b_ok_a;
-
-    /* run the Command Unit: */
-    new_callouts |= TME_I825X6_CALLOUT_CU;
-
-    /* we no longer have a packet to transmit: */
-    i825x6->tme_i825x6_el_s_i_cmd
-      = ((i825x6->tme_i825x6_el_s_i_cmd
-	  & ~TME_I825X6_CB_CMD_MASK)
-	 | TME_I825X6_CB_CMD_NOP);
-  }
+  /* transmit any frame: */
+  length = _tme_i825x6_transmit(i825x6, frame_chunks);
 
   /* make any new callouts: */
-  _tme_i825x6_callout(i825x6, new_callouts);
+  _tme_i825x6_callout(i825x6, 0);
 
   /* unlock our mutex: */
   tme_mutex_unlock(&i825x6->tme_i825x6_mutex);
