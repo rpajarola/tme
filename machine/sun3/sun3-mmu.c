@@ -57,16 +57,6 @@ _TME_RCSID("$Id: sun3-mmu.c,v 1.6 2009/08/30 14:25:21 fredette Exp $");
 #define TME_SUN3_PGTYPE_VME_D16		(2)
 #define TME_SUN3_PGTYPE_VME_D32		(3)
 
-/* real bus error register bits: */
-#define TME_SUN3_BUSERR_WATCHDOG	TME_BIT(0)	/* watchdog or user reset */
-					/* bit 1 unused */
-#define TME_SUN3_BUSERR_FPAENERR	TME_BIT(2)	/* FPA enable error */
-#define TME_SUN3_BUSERR_FPABERR		TME_BIT(3)	/* FPA bus error */
-#define TME_SUN3_BUSERR_VMEBUSERR	TME_BIT(4)	/* VME bus error */
-#define TME_SUN3_BUSERR_TIMEOUT		TME_BIT(5)	/* timeout error */
-#define TME_SUN3_BUSERR_PROTERR		TME_BIT(6)	/* MMU protection error */
-#define TME_SUN3_BUSERR_INVALID		TME_BIT(7)	/* MMU page invalid error */
-
 /* real context count: */
 #define TME_SUN3_CONTEXT_COUNT		(8)
 

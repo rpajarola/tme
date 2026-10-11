@@ -818,6 +818,10 @@ tme_m68k_tlb_fill(struct tme_m68k *ic, struct tme_m68k_tlb *tlb,
 void
 tme_m68k_exception(struct tme_m68k *ic, tme_uint32_t new_exceptions)
 {
+  struct tme_m68k_tlb *tlb;
+  struct tme_bus_connection *conn_bus;
+  int rc;
+
   assert(new_exceptions != 0);
 
   /* if the set of new exceptions includes a group zero exception: */
@@ -848,6 +852,26 @@ tme_m68k_exception(struct tme_m68k *ic, tme_uint32_t new_exceptions)
 	       _("double fault, processor halted")));
       ic->_tme_m68k_mode = TME_M68K_MODE_HALT;
       TME_M68K_SEQUENCE_START;
+
+      /* unbusy and forget any fast instruction TLB entry before the
+	 callout: */
+      tlb = ic->_tme_m68k_insn_fetch_fast_itlb;
+      if (tlb != NULL) {
+	tme_m68k_tlb_unbusy(tlb);
+	ic->_tme_m68k_insn_fetch_fast_itlb = NULL;
+      }
+
+      /* assert HALT, so the machine can react (a sun3's watchdog
+	 resets it).  on a generic bus, nothing would: */
+      if (ic->_tme_m68k_bus_generic == NULL) {
+	conn_bus = &ic->_tme_m68k_bus_connection->tme_m68k_bus_connection;
+	rc = (*conn_bus->tme_bus_signal)
+	  (conn_bus,
+	   (TME_BUS_SIGNAL_HALT
+	    | TME_BUS_SIGNAL_LEVEL_ASSERTED));
+	assert (rc == TME_OK);
+      }
+
       tme_m68k_redispatch(ic);
     }
   }

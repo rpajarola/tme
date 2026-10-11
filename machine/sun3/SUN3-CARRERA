@@ -27,6 +27,11 @@ mainbus0 intreg	at obio0 addr 0x0A0000
 # of your /dev/bpfN devices (on *BSD) OR have cap_net_raw+ep capability (on Linux)
 # and you want an Ethernet device:
 #
+# the obie0 and ie0 lines work without any of the host attachments
+# below (the board is just not connected to a network).  the PROM's
+# "k 2" reset command touches the board and fails with a timeout bus
+# error if it's missing.
+#
 #obie0: tme/machine/sun3/obie
 #obie0 csr at obio0 addr 0x0c0000 ipl 3
 #obie0 memory at mainbus0
@@ -128,3 +133,14 @@ tape0 at st0: tme/host/posix/tape
 # tmesh starts:
 #
 # command mainbus0 power up
+
+## the watchdog:
+##
+# when the CPU halts after a double fault, a real sun3's watchdog
+# resets the machine, and the PROM prints "Watchdog Reset!" and
+# returns to its prompt.  this is on by default.  uncomment this line
+# to leave the CPU halted instead, for example to examine the machine
+# after a crash.  you can also change it at the tmesh prompt, and
+# "command mainbus0 watchdog-reset" shows the current setting:
+#
+# command mainbus0 watchdog-reset false

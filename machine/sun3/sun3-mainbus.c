@@ -94,6 +94,65 @@ _tme_sun3_ipl_check(struct tme_sun3 *sun3)
   return (TME_OK);
 }
 
+/* this resets the CPU and all busses: */
+static void
+_tme_sun3_reset(struct tme_sun3 *sun3)
+{
+
+  /* reset the CPU: */
+  (*sun3->tme_sun3_m68k->tme_m68k_bus_connection.tme_bus_signal)
+    (&sun3->tme_sun3_m68k->tme_m68k_bus_connection,
+     TME_BUS_SIGNAL_RESET
+     | TME_BUS_SIGNAL_LEVEL_NEGATED
+     | TME_BUS_SIGNAL_EDGE);
+
+  /* reset all busses: */
+  (*sun3->tme_sun3_obio->tme_bus_signal)
+    (sun3->tme_sun3_obio,
+     TME_BUS_SIGNAL_RESET
+     | TME_BUS_SIGNAL_LEVEL_NEGATED
+     | TME_BUS_SIGNAL_EDGE);
+  (*sun3->tme_sun3_obmem->tme_bus_signal)
+    (sun3->tme_sun3_obmem,
+     TME_BUS_SIGNAL_RESET
+     | TME_BUS_SIGNAL_LEVEL_NEGATED
+     | TME_BUS_SIGNAL_EDGE);
+  (*sun3->tme_sun3_vmebus->tme_bus_signal)
+    (sun3->tme_sun3_vmebus,
+     TME_BUS_SIGNAL_RESET
+     | TME_BUS_SIGNAL_LEVEL_NEGATED
+     | TME_BUS_SIGNAL_EDGE);
+}
+
+/* this handles the CPU halting.  on a real sun3, the watchdog then
+   resets the machine and sets the watchdog bit in the bus error
+   register, which tells the PROM why it was reset: */
+static void
+_tme_sun3_halt(struct tme_sun3 *sun3)
+{
+
+  /* if the watchdog reset is disabled, leave the CPU halted: */
+  if (!sun3->tme_sun3_watchdog_reset) {
+    tme_log(TME_SUN3_LOG_HANDLE(sun3), 0, TME_OK,
+	    (TME_SUN3_LOG_HANDLE(sun3),
+	     _("CPU halted, watchdog reset disabled")));
+    return;
+  }
+
+  tme_log(TME_SUN3_LOG_HANDLE(sun3), 0, TME_OK,
+	  (TME_SUN3_LOG_HANDLE(sun3),
+	   _("CPU halted, watchdog reset")));
+
+  /* a watchdog reset returns to boot state with interrupts
+     disabled: */
+  _tme_sun3_enable_set(sun3, 0);
+  sun3->tme_sun3_ints = 0;
+  _tme_sun3_ipl_check(sun3);
+  sun3->tme_sun3_buserr = TME_SUN3_BUSERR_WATCHDOG;
+
+  _tme_sun3_reset(sun3);
+}
+
 /* our mainbus signal handler: */
 static int
 _tme_sun3_bus_signal(struct tme_bus_connection *conn_bus_raiser, unsigned int signal)
@@ -158,7 +217,9 @@ _tme_sun3_bus_signal(struct tme_bus_connection *conn_bus_raiser, unsigned int si
 
   /* halt: */
   if (signal == TME_BUS_SIGNAL_HALT) {
-    abort();
+    if (signal_asserted) {
+      _tme_sun3_halt(sun3);
+    }
   }
 
   /* reset: */
@@ -354,6 +415,37 @@ _tme_sun3_command(struct tme_element *element, const char * const * args, char *
     }
   }
 
+  /* the "watchdog-reset" command: */
+  else if (TME_ARG_IS(args[1], "watchdog-reset")) {
+
+    if (args[2] == NULL) {
+      tme_output_append_error(_output,
+			      "watchdog-reset %s",
+			      (sun3->tme_sun3_watchdog_reset
+			       ? "true"
+			       : "false"));
+    }
+
+    else if (TME_ARG_IS(args[2], "true")
+	     && args[3] == NULL) {
+      sun3->tme_sun3_watchdog_reset = TRUE;
+    }
+
+    else if (TME_ARG_IS(args[2], "false")
+	     && args[3] == NULL) {
+      sun3->tme_sun3_watchdog_reset = FALSE;
+    }
+
+    /* return an error: */
+    else {
+      tme_output_append_error(_output,
+			      "%s %s watchdog-reset [ true | false ]",
+			      _("usage:"),
+			      args[0]);
+      return (EINVAL);
+    }
+  }
+
   /* any other command: */
   else {
     if (args[1] != NULL) {
@@ -365,35 +457,12 @@ _tme_sun3_command(struct tme_element *element, const char * const * args, char *
     tme_output_append_error(_output,
 			    _("available %s commands: %s"),
 			    args[0],
-			    "power");
+			    "power diag-switch watchdog-reset");
     return (EINVAL);
   }
 
   if (do_reset) {
-
-    /* reset the CPU: */
-    (*sun3->tme_sun3_m68k->tme_m68k_bus_connection.tme_bus_signal)
-      (&sun3->tme_sun3_m68k->tme_m68k_bus_connection,
-       TME_BUS_SIGNAL_RESET
-       | TME_BUS_SIGNAL_LEVEL_NEGATED
-       | TME_BUS_SIGNAL_EDGE);
-
-    /* reset all busses: */
-    (*sun3->tme_sun3_obio->tme_bus_signal)
-      (sun3->tme_sun3_obio,
-       TME_BUS_SIGNAL_RESET
-       | TME_BUS_SIGNAL_LEVEL_NEGATED
-       | TME_BUS_SIGNAL_EDGE);
-    (*sun3->tme_sun3_obmem->tme_bus_signal)
-      (sun3->tme_sun3_obmem,
-       TME_BUS_SIGNAL_RESET
-       | TME_BUS_SIGNAL_LEVEL_NEGATED
-       | TME_BUS_SIGNAL_EDGE);
-    (*sun3->tme_sun3_vmebus->tme_bus_signal)
-      (sun3->tme_sun3_vmebus,
-       TME_BUS_SIGNAL_RESET
-       | TME_BUS_SIGNAL_LEVEL_NEGATED
-       | TME_BUS_SIGNAL_EDGE);
+    _tme_sun3_reset(sun3);
   }
 
   return (TME_OK);
@@ -741,6 +810,9 @@ TME_ELEMENT_NEW_DECL(tme_machine_sun3) {
 
   /* the bus error register: */
   sun3->tme_sun3_buserr = 0;
+
+  /* the watchdog resets the machine when the CPU halts: */
+  sun3->tme_sun3_watchdog_reset = TRUE;
 
   /* the enable register: */
   sun3->tme_sun3_enable = 0;

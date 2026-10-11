@@ -120,7 +120,12 @@ _tme_sun2_bus_signal(struct tme_bus_connection *conn_bus_raiser, unsigned int si
 
   /* halt: */
   if (signal == TME_BUS_SIGNAL_HALT) {
-    abort();
+    /* XXX the CPU stays halted until the machine is powered up again: */
+    if (signal_asserted) {
+      tme_log(TME_SUN2_LOG_HANDLE(sun2), 0, TME_OK,
+	      (TME_SUN2_LOG_HANDLE(sun2),
+	       _("CPU halted")));
+    }
   }
 
   /* reset: */

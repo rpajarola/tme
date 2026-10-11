@@ -81,6 +81,16 @@ _TME_RCSID("$Id: sun3-impl.h,v 1.4 2009/08/30 14:19:55 fredette Exp $");
 #define TME_SUN3_ENA_FPP		(0x40)	/* enable 6888x */
 #define TME_SUN3_ENA_NOTBOOT		(0x80)	/* non-boot state */
 
+/* real bus error register bits: */
+#define TME_SUN3_BUSERR_WATCHDOG	TME_BIT(0)	/* watchdog or user reset */
+					/* bit 1 unused */
+#define TME_SUN3_BUSERR_FPAENERR	TME_BIT(2)	/* FPA enable error */
+#define TME_SUN3_BUSERR_FPABERR		TME_BIT(3)	/* FPA bus error */
+#define TME_SUN3_BUSERR_VMEBUSERR	TME_BIT(4)	/* VME bus error */
+#define TME_SUN3_BUSERR_TIMEOUT		TME_BIT(5)	/* timeout error */
+#define TME_SUN3_BUSERR_PROTERR		TME_BIT(6)	/* MMU protection error */
+#define TME_SUN3_BUSERR_INVALID		TME_BIT(7)	/* MMU page invalid error */
+
 /* real sun3 interrupt register bits: */
 #define TME_SUN3_IREG_INTS_ENAB		(0x01)  /* enable interrupts */
 #define TME_SUN3_IREG_SOFT_INT_1	(0x02)  /* enable level 1 soft interrupts */
@@ -184,6 +194,9 @@ struct tme_sun3 {
   /* the bus error register: */
   tme_uint8_t tme_sun3_buserr;
 
+  /* nonzero if the watchdog resets the machine when the CPU halts: */
+  int tme_sun3_watchdog_reset;
+
   /* the diagnostic register: */
   tme_uint8_t tme_sun3_diag;
 
@@ -239,5 +252,6 @@ int _tme_sun3_intreg_cycle_handler _TME_P((void *, struct tme_bus_cycle *));
 int _tme_sun3_memerr_cycle_handler _TME_P((void *, struct tme_bus_cycle *));
 int _tme_sun3_memerr_test_cycle_handler _TME_P((void *, struct tme_bus_cycle *));
 int _tme_sun3_ipl_check _TME_P((struct tme_sun3 *));
+void _tme_sun3_enable_set _TME_P((struct tme_sun3 *, tme_uint8_t));
 
 #endif /* !_MACHINE_SUN3_IMPL_H */

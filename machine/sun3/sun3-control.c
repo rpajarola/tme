@@ -39,6 +39,43 @@ _TME_RCSID("$Id: sun3-control.c,v 1.3 2009/08/30 14:20:59 fredette Exp $");
 /* includes: */
 #include "sun3-impl.h"
 
+/* this sets the enable register.  the diagnostic switch bit isn't
+   writable: */
+void
+_tme_sun3_enable_set(struct tme_sun3 *sun3, tme_uint8_t enable)
+{
+  tme_uint8_t enable_old, enable_new;
+  int rc;
+
+  enable_old = sun3->tme_sun3_enable;
+  enable_new = (enable_old & TME_SUN3_ENA_DIAG) | (enable & ~TME_SUN3_ENA_DIAG);
+  sun3->tme_sun3_enable = enable_new;
+
+  /* if we're changing to or from boot state, make a pseudo-context change: */
+  if ((enable_old ^ enable_new) & TME_SUN3_ENA_NOTBOOT) {
+    _tme_sun3_mmu_context_set(sun3);
+  }
+
+  /* if we're changing the m6888x enable bit, call out the change: */
+  if ((enable_old ^ enable_new) & TME_SUN3_ENA_FPP) {
+    rc = ((*sun3->tme_sun3_m68k->tme_m68k_bus_m6888x_enable)
+	  (sun3->tme_sun3_m68k, (enable_new & TME_SUN3_ENA_FPP)));
+    assert (rc == TME_OK);
+  }
+
+  /* if we're enabling or disabling system DVMA, call out the change: */
+  if ((enable_old ^ enable_new) & TME_SUN3_ENA_SDVMA) {
+    _tme_sun3_mmu_sdvma_change(sun3);
+  }
+
+  /* certain things can't be enabled: */
+  if (enable_new
+      & (TME_SUN3_ENA_COPY
+	 | TME_SUN3_ENA_CACHE)) {
+    abort();
+  }
+}
+
 /* the bus cycle handler for function code three space: */
 int
 _tme_sun3_control_cycle_handler(void *_sun3, struct tme_bus_cycle *cycle_init)
@@ -50,7 +87,6 @@ _tme_sun3_control_cycle_handler(void *_sun3, struct tme_bus_cycle *cycle_init)
   tme_uint8_t *port_data8;
   tme_uint32_t *port_data32;
   tme_uint32_t value32;
-  tme_uint8_t enable_old, enable_new;
   int rc;
 
   /* recover our sun3: */
@@ -165,33 +201,7 @@ _tme_sun3_control_cycle_handler(void *_sun3, struct tme_bus_cycle *cycle_init)
       break;
 
     case TME_SUN3_CONTROL_REG(TME_SUN3_CONTROL_ENABLE):
-      enable_old = sun3->tme_sun3_enable;
-      enable_new = (enable_old & TME_SUN3_ENA_DIAG) | (*port_data8 & ~TME_SUN3_ENA_DIAG);
-      sun3->tme_sun3_enable = enable_new;
-
-      /* if we're changing to or from boot state, make a pseudo-context change: */
-      if ((enable_old ^ enable_new) & TME_SUN3_ENA_NOTBOOT) {
-	_tme_sun3_mmu_context_set(sun3);
-      }
-
-      /* if we're changing the m6888x enable bit, call out the change: */
-      if ((enable_old ^ enable_new) & TME_SUN3_ENA_FPP) {
-	rc = ((*sun3->tme_sun3_m68k->tme_m68k_bus_m6888x_enable)
-	      (sun3->tme_sun3_m68k, (enable_new & TME_SUN3_ENA_FPP)));
-	assert (rc == TME_OK);
-      }
-
-      /* if we're enabling or disabling system DVMA, call out the change: */
-      if ((enable_old ^ enable_new) & TME_SUN3_ENA_SDVMA) {
-	_tme_sun3_mmu_sdvma_change(sun3);
-      }
-
-      /* certain things can't be enabled: */
-      if (enable_new
-	  & (TME_SUN3_ENA_COPY
-	     | TME_SUN3_ENA_CACHE)) {
-	abort();
-      }
+      _tme_sun3_enable_set(sun3, *port_data8);
       break;
 
     case TME_SUN3_CONTROL_REG(TME_SUN3_CONTROL_UDVMA):
