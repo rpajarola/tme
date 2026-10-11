@@ -16,3 +16,11 @@ Control_R F7 = L7
 Control_R F8 = L8
 Control_R F9 = L9
 Control_R F10 = L10
+
+# F1 generates L1, which is Stop, so that F1-A is Stop-A, to
+# interrupt the boot or get to the PROM monitor.  Mac keyboards have
+# no right Control for the macro above.  on a Mac, turn on "Use F1,
+# F2, etc. keys as standard function keys" in the keyboard settings
+# and use plain F1-A; fn-F1-A doesn't work, because macOS takes fn-A
+# for itself:
+F1 = L1
