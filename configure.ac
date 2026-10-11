@@ -795,6 +795,13 @@ if test "x${enable_gtk}" = xyes; then
    PKG_CHECK_MODULES([GTK], [gtk+-3.0], [],
      [AC_MSG_ERROR([GTK not found: install GTK 3 (gtk+-3.0), or leave gtk out of --enable-hosts])])
    TME_DISPLAY_HOSTS="gtk ${TME_DISPLAY_HOSTS}"
+   dnl with GDK's Quartz backend, the GTK display also calls
+   dnl CoreGraphics.  GTK_LIBS has it as -Wl,-framework,CoreGraphics,
+   dnl but libtool doesn't carry that over when tmesh links the module
+   dnl statically, so add it in a form that it does:
+   case " `$PKG_CONFIG --variable=targets gdk-3.0` " in
+   *" quartz "*) GTK_LIBS="${GTK_LIBS} -framework CoreGraphics" ;;
+   esac
 #   TME_FB_XLAT_DST="d32b32s0p32olml_r0xffff0000_g0xff00ff00_b0xff0000ff d24b32s0p32olml_r0xff0000_g0xff00_b0xff d16b16s0p32olml_r0xf800_g0x07e0_b0x001f d8b8s0p32olml_r0xff_g0xff_b0xff d1b1s0p32olml_r0x1_g0x1_b0x1"
 fi
 

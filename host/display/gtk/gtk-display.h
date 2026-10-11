@@ -88,14 +88,12 @@ struct tme_gtk_screen {
   GtkWidget *tme_gtk_screen_mouse_statusbar;
   guint tme_gtk_screen_mouse_statusbar_cid;
 
-  /* if GDK_VoidSymbol, mouse mode is off.  otherwise,
-     mouse mode is on, and this is the keyval that will
-     turn mouse mode off: */
-  guint tme_gtk_screen_mouse_keyval;
+  /* nonzero iff mouse mode is on, and the pointer is captured: */
+  int tme_gtk_screen_mouse_on;
 
-  /* when mouse mode is on, this is the previous events mask
-     for the framebuffer event box: */
-  GdkEventMask tme_gtk_screen_mouse_events_old;
+  /* the modifier keys being held down, for the key combination
+     that turns mouse mode off: */
+  unsigned int tme_gtk_screen_mouse_mods;
 
 };
 
@@ -111,6 +109,7 @@ struct tme_display_menu_item {
 void _tme_gtk_keyboard_attach _TME_P((struct tme_gtk_screen *));
 void _tme_gtk_mouse_attach _TME_P((struct tme_gtk_screen *));
 void _tme_gtk_mouse_mode_off _TME_P((struct tme_gtk_screen *, guint32));
+void _tme_gtk_mouse_key_event _TME_P((struct tme_gtk_screen *, GdkEventKey *));
 gint _tme_display_enter_focus _TME_P((GtkWidget *, GdkEvent *, gpointer));
 GtkWidget *_tme_display_menu_radio _TME_P((struct tme_gtk_screen *, struct tme_display_menu_item *, int num_items));
 

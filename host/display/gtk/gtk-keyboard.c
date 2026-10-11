@@ -72,19 +72,9 @@ _tme_gtk_keyboard_key_event(GtkWidget *widget,
   /* lock the mutex: */
   tme_mutex_lock(&display->tme_display_mutex);
 
-  /* if this is a press of the mouse mode off key, turn mouse mode off
-     and return now: */
-  if (gdk_event->type == GDK_KEY_PRESS
-      && (gdk_event->keyval
-	  == screen->tme_gtk_screen_mouse_keyval)) {
-    _tme_gtk_mouse_mode_off(screen,
-			    gdk_event->time);
-
-    /* unlock the mutex: */
-    tme_mutex_unlock(&display->tme_display_mutex);
-    
-    return (TRUE);
-  }
+  /* turn mouse mode off if this completes the key combination for
+     that: */
+  _tme_gtk_mouse_key_event(screen, gdk_event);
 
   _tme_keyboard_key_event(&tme_event, display);
   
