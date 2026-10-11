@@ -38,6 +38,7 @@ _TME_RCSID("$Id: sun3-mainbus.c,v 1.7 2009/08/30 14:17:53 fredette Exp $");
 
 /* includes: */
 #include "sun3-impl.h"
+#include "../sun/sun-idprom.h"
 #include <tme/ic/z8530.h>
 #include <tme/ic/isil7170.h>
 #include <stdio.h>
@@ -753,6 +754,7 @@ TME_ELEMENT_NEW_DECL(tme_machine_sun3) {
   FILE *idprom_fp;
   tme_uint8_t idprom[TME_SUN_IDPROM_SIZE];
   int arg_i;
+  int rc;
 
   arg_i = 1;
   usage = FALSE;
@@ -780,6 +782,14 @@ TME_ELEMENT_NEW_DECL(tme_machine_sun3) {
 			    args[0],
 			    _("-FILENAME"));
     return (EINVAL);
+  }
+
+  /* if the IDPROM file doesn't exist, make a new one: */
+  rc = tme_sun_idprom_file_create(idprom_filename, "Carrera",
+				  TME_SUN_IDPROM_BYTES, 0, "IDPROM");
+  if (rc != TME_OK) {
+    tme_output_append_error(_output, "%s", idprom_filename);
+    return (rc);
   }
 
   /* try to read in the IDPROM: */
@@ -873,6 +883,44 @@ TME_ELEMENT_SUB_NEW_DECL(tme_machine_sun3,clock) {
 }
 
 /* this creates a new Sun-3 z8530: */
+/* this creates a new Sun-3 EEPROM, persistent memory in the file
+   given, which is created with the default settings if it doesn't
+   exist: */
+TME_ELEMENT_SUB_NEW_DECL(tme_machine_sun3,eeprom) {
+  const char *sub_args[4];
+  int created;
+  int rc;
+
+  if (args[1] == NULL || args[2] != NULL) {
+    tme_output_append_error(_output,
+			    "%s %s EEPROM%s",
+			    _("usage:"),
+			    args[0],
+			    _("-FILENAME"));
+    return (EINVAL);
+  }
+
+  /* if the EEPROM file doesn't exist, make a new one: */
+  rc = tme_sun_file_create(args[1],
+			   tme_sun3_eeprom_default,
+			   sizeof(tme_sun3_eeprom_default),
+			   &created);
+  if (rc != TME_OK) {
+    tme_output_append_error(_output, "%s", args[1]);
+    return (rc);
+  }
+  if (created) {
+    fprintf(stderr, "created %s, a new Sun-3 EEPROM with the default settings\n", args[1]);
+  }
+
+  /* create the persistent memory: */
+  sub_args[0] = "tme/host/posix/memory";
+  sub_args[1] = "persistent";
+  sub_args[2] = args[1];
+  sub_args[3] = NULL;
+  return (tme_element_new(element, sub_args, NULL, _output));
+}
+
 TME_ELEMENT_SUB_NEW_DECL(tme_machine_sun3,zs) {
   struct tme_z8530_socket socket = TME_SUN_Z8530_SOCKET_INIT;
   char *sub_args[2];

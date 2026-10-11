@@ -24,7 +24,10 @@ ram2 at mainbus0 addr 0x0a000000: tme/host/posix/memory ram 32MB
 rom0 at mainbus0 addr 0xf6000000: tme/host/posix/memory rom sun4-75-rev-2.9.bin
 zs0 at mainbus0 addr 0xf1000000 ipl 12: tme/machine/sun4/zs
 zs1 at mainbus0 addr 0xf0000000 ipl 12: tme/machine/sun4/zs
-nvram0 at mainbus0 addr 0xf2000000: tme/host/posix/memory persistent my-sun4c-nvram.bin
+# if the NVRAM file doesn't exist, it's created with an IDPROM with a
+# random Ethernet address and serial number, and the PROM sets its
+# default settings on the first power up:
+nvram0 at mainbus0 addr 0xf2000000: tme/machine/sun4/nvram my-sun4c-nvram.bin
 clock0 at mainbus0 addr 0xf20007f8: tme/machine/sun4/clock type tme/ic/mk48t02
 board0 timer at mainbus0 addr 0xf3000000
 board0 memerr at mainbus0 addr 0xf4000000

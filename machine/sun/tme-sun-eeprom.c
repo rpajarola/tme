@@ -767,7 +767,7 @@ usage_print(void)
   fprintf(stderr, "  --verbose                 include comments in text output\n");
   fprintf(stderr, "  --all                     display normally hidden fields in text output\n");
   fprintf(stderr, "  --format-input=FORMAT     set the input format to FORMAT, one of: text binary\n");
-  fprintf(stderr, "  --format-output=FORMAT    set the output format to FORMAT, one of: text binary\n");
+  fprintf(stderr, "  --format-output=FORMAT    set the output format to FORMAT, one of: text binary c\n");
 }
 
 int
@@ -828,7 +828,8 @@ main(int argc, char **argv)
   }
   if (format_output != NULL
       && strcmp(format_output, "text") != 0
-      && strcmp(format_output, "binary") != 0) {
+      && strcmp(format_output, "binary") != 0
+      && strcmp(format_output, "c") != 0) {
     fprintf(stderr, "%s error: unknown output format %s\n", prog, format_output);
     usage = 1;
   }
@@ -898,7 +899,7 @@ main(int argc, char **argv)
     format_output = (strcmp(format_input, "text") == 0 ? "binary" : "text");
     fprintf(stderr, "%s notice: output format is %s\n", prog, format_output);
   }
-  if (strcmp(format_output, "binary") == 0
+  if (strcmp(format_output, "text") != 0
       && (verbose || all)) {
     fprintf(stderr, "%s error: --verbose and --all don't make sense for binary output\n", prog);
     exit(1);
@@ -1108,8 +1109,20 @@ main(int argc, char **argv)
     free_words(values, values_count);
   }
 
+  /* if our output is C, dump out the image as the default EEPROM
+     contents for the emulator: */
+  if (strcmp(format_output, "c") == 0) {
+    printf("/* generated automatically by %s, do not edit! */\n\n", prog);
+    printf("#include \"sun-idprom.h\"\n\n");
+    printf("const unsigned char tme_sun3_eeprom_default[TME_SUN3_EEPROM_BYTES] = {");
+    for (len = 0; len < image_len; len++) {
+      printf("%s0x%02x", (len % 12 == 0 ? (len == 0 ? "\n  " : ",\n  ") : ", "), image[len]);
+    }
+    printf("\n};\n");
+  }
+
   /* if our output is binary, dump out the image: */
-  if (strcmp(format_output, "binary") == 0) {
+  else if (strcmp(format_output, "binary") == 0) {
     if (image_len > 0 && fwrite(image, 1, image_len, stdout) != image_len) {
       perror("stdout");
       exit(1);

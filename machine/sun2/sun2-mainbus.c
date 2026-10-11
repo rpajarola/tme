@@ -38,6 +38,7 @@ _TME_RCSID("$Id: sun2-mainbus.c,v 1.18 2009/08/30 14:32:29 fredette Exp $");
 
 /* includes: */
 #include "sun2-impl.h"
+#include "../sun/sun-idprom.h"
 #include <tme/ic/am9513.h>
 #include <tme/ic/z8530.h>
 #include <tme/ic/mm58167.h>
@@ -576,6 +577,7 @@ TME_ELEMENT_NEW_DECL(tme_machine_sun2) {
   FILE *idprom_fp;
   tme_uint8_t idprom[TME_SUN_IDPROM_SIZE];
   int arg_i;
+  int rc;
 
   arg_i = 1;
   usage = FALSE;
@@ -616,6 +618,14 @@ TME_ELEMENT_NEW_DECL(tme_machine_sun2) {
 			    args[0],
 			    _("-FILENAME"));
     return (EINVAL);
+  }
+
+  /* if the IDPROM file doesn't exist, make a new one: */
+  rc = tme_sun_idprom_file_create(idprom_filename, (sun2_has_vme ? "sun2 VME" : "sun2 Multibus"),
+				  TME_SUN_IDPROM_BYTES, 0, "IDPROM");
+  if (rc != TME_OK) {
+    tme_output_append_error(_output, "%s", idprom_filename);
+    return (rc);
   }
 
   /* try to read in the IDPROM: */

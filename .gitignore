@@ -50,6 +50,7 @@ Makefile
 /host/display/keymap.h
 /ic/ieee754/ieee754-precision.sh
 /ic/m68k/m68k-opmap.c
+/machine/sun/sun3-eeprom-default.c
 /libtme/misc-host.c
 /libtme/recode-host.c
 /libtme/shlibvar.h

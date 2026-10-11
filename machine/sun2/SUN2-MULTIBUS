@@ -5,6 +5,9 @@
 
 ## the Multibus and VME sun2 common buses and devices:
 ##
+# if the IDPROM file doesn't exist, it's created, with a random
+# Ethernet address and serial number:
+#
 mainbus0: tme/machine/sun2 multibus my-sun2-idprom.bin
 cpu0 at mainbus0: tme/ic/m68010
 obio0 at mainbus0 obio: tme/generic/bus size 8MB

@@ -38,6 +38,7 @@ _TME_RCSID("$Id: sun4-mainbus.c,v 1.6 2009/08/30 14:03:11 fredette Exp $");
 
 /* includes: */
 #include "sun4-impl.h"
+#include "../sun/sun-idprom.h"
 #include <tme/ic/z8530.h>
 #include <tme/ic/isil7170.h>
 #include <tme/ic/mk48txx.h>
@@ -872,6 +873,62 @@ TME_ELEMENT_SUB_NEW_DECL(tme_machine_sun4,clock) {
   }
 
   return (tme_element_new(element, args + 2, &socket, _output));
+}
+
+/* this creates a new sun4c NVRAM, persistent memory in the file
+   given.  if the file doesn't exist, it is created with an IDPROM
+   for the code name given, or for a SPARCstation 2, and the PROM
+   fills in its default settings on the first power up: */
+TME_ELEMENT_SUB_NEW_DECL(tme_machine_sun4,nvram) {
+  const char *sub_args[4];
+  const char *filename;
+  const char *codename;
+  int usage;
+  int rc;
+
+  usage = FALSE;
+  filename = args[1];
+  codename = "Calvin";
+  if (filename == NULL) {
+    usage = TRUE;
+  }
+  else if (TME_ARG_IS(args[2], "name")) {
+    codename = (args[3] == NULL ? NULL : tme_sun_idprom_codename(args[3]));
+    if (codename == NULL
+	|| (tme_sun_idprom_machtype(codename) & TME_SUN_IDPROM_TYPE_MASK_ARCH) != TME_SUN_IDPROM_TYPE_ARCH_SUN4C
+	|| args[4] != NULL) {
+      usage = TRUE;
+    }
+  }
+  else if (args[2] != NULL) {
+    usage = TRUE;
+  }
+  if (usage) {
+    tme_output_append_error(_output,
+			    "%s %s NVRAM%s [ name %s ]",
+			    _("usage:"),
+			    args[0],
+			    _("-FILENAME"),
+			    _("SUN4C-MACHINE"));
+    return (EINVAL);
+  }
+
+  /* if the NVRAM file doesn't exist, make a new one: */
+  rc = tme_sun_idprom_file_create(filename, codename,
+				  TME_SUN4C_NVRAM_BYTES,
+				  TME_SUN4C_NVRAM_OFF_IDPROM,
+				  "sun4c NVRAM");
+  if (rc != TME_OK) {
+    tme_output_append_error(_output, "%s", filename);
+    return (rc);
+  }
+
+  /* create the persistent memory: */
+  sub_args[0] = "tme/host/posix/memory";
+  sub_args[1] = "persistent";
+  sub_args[2] = filename;
+  sub_args[3] = NULL;
+  return (tme_element_new(element, sub_args, NULL, _output));
 }
 
 /* this creates a new Sun-4 z8530: */

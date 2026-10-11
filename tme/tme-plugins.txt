@@ -32,6 +32,7 @@ tme_machine_sun2_zs tme_machine_sun2 zs
 tme_machine_sun2_bwtwo tme_machine_sun2 bwtwo
 tme_machine_sun3
 tme_machine_sun3_clock tme_machine_sun3 clock
+tme_machine_sun3_eeprom tme_machine_sun3 eeprom
 tme_machine_sun3_zs tme_machine_sun3 zs
 tme_machine_sun3_obie tme_machine_sun3 obie
 tme_machine_sun3_bwtwo tme_machine_sun3 bwtwo
@@ -42,6 +43,7 @@ tme_machine_sun4_fdc tme_machine_sun4 fdc
 tme_machine_sun4_oclock tme_machine_sun4 oclock
 tme_machine_sun4_clock tme_machine_sun4 clock
 tme_machine_sun4_zs tme_machine_sun4 zs
+tme_machine_sun4_nvram tme_machine_sun4 nvram
 tme_host_rfb_display tme_host_rfb display
 tme_host_sdl_display tme_host_sdl display
 tme_host_gtk_display tme_host_gtk display
