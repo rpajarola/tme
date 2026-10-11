@@ -951,9 +951,13 @@ _tme_am7990_callout(struct tme_am7990 *am7990)
       ctrl |= TME_ETHERNET_CTRL_OK_READ;
     }
 
-    /* if we are readable and in loopback mode: */
+    /* if we are readable and in loopback mode, or there is no
+       Ethernet connection, transmit the packet ourselves.  without a
+       connection it goes nowhere, as on a cable with nothing else on
+       it; otherwise, the transmit would never complete: */
     if ((ctrl & TME_ETHERNET_CTRL_OK_READ)
-	&& (am7990->tme_am7990_mode & TME_AM7990_MODE_LOOP)) {
+	&& ((am7990->tme_am7990_mode & TME_AM7990_MODE_LOOP)
+	    || am7990->tme_am7990_eth_connection == NULL)) {
       again = TRUE;
 
       /* unlock the mutex: */
