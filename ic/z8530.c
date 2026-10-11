@@ -633,6 +633,55 @@ _tme_z8530_intack(struct tme_z8530 *z8530, int *_vector)
   return (TME_OK);
 }
 
+/* this copies out data from a channel's Tx FIFO, as it is
+   transmitted.  it must be called with the mutex locked, and it adds
+   any needed callouts to the channel: */
+static int
+_tme_z8530_tx_copyout(struct tme_z8530 *z8530, struct tme_z8530_chan *chan,
+		      tme_uint8_t *data, unsigned int count,
+		      tme_serial_data_flags_t *_data_flags)
+{
+  tme_uint8_t rr3_ip_tx;
+  int rc;
+
+  /* copy out data from the Tx FIFO: */
+  rc = tme_serial_buffer_copyout(&chan->tme_z8530_chan_buffer_tx,
+				 data, count,
+				 _data_flags,
+				 TME_SERIAL_COPY_NORMAL);
+
+  /* if the Tx buffer is now empty: */
+  if (tme_serial_buffer_is_empty(&chan->tme_z8530_chan_buffer_tx)) {
+
+    /* update RR0: */
+    chan->tme_z8530_chan_rdreg[0] |= TME_Z8530_RR0_TX_EMPTY;
+
+    /* update RR1: */
+    chan->tme_z8530_chan_rdreg[1] |= TME_Z8530_RR1_ALL_SENT;
+
+    /* if Tx interrupts are enabled: */
+    if (chan->tme_z8530_chan_wrreg[1] & TME_Z8530_WR1_TX_INT_ENABLE) {
+
+      /* get the IP_TX bit for this channel: */
+      rr3_ip_tx = ((chan == &z8530->tme_z8530_chan_a)
+		   ? TME_Z8530_RR3_CHAN_A_IP_TX
+		   : TME_Z8530_RR3_CHAN_B_IP_TX);
+
+      /* if the Tx buffer is newly empty, flag this channel for a Tx
+	 interrupt: */
+      if (!(z8530->tme_z8530_rr3 & rr3_ip_tx)) {
+	z8530->tme_z8530_rr3 |= rr3_ip_tx;
+	chan->tme_z8530_chan_callout_flags |= TME_Z8530_CALLOUT_INT;
+      }
+    }
+
+    /* call out a new control to clear OK_READ: */
+    chan->tme_z8530_chan_callout_flags |= TME_Z8530_CALLOUT_CTRL;
+  }
+
+  return (rc);
+}
+
 /* the z8530 callout function.  it must be called with the mutex locked: */
 static void
 _tme_z8530_callout(struct tme_z8530 *z8530, struct tme_z8530_chan *chan, int new_callouts)
@@ -718,18 +767,31 @@ _tme_z8530_callout(struct tme_z8530 *z8530, struct tme_z8530_chan *chan, int new
 	ctrl |= TME_SERIAL_CTRL_OK_READ;
       }
       
-      /* unlock the mutex: */
-      tme_mutex_unlock(&z8530->tme_z8530_mutex);
+      /* if nothing is connected to this channel, anything being
+	 transmitted goes nowhere, as on an unconnected line.
+	 otherwise, the Tx buffer would never empty: */
+      if (conn_serial == NULL) {
+	while (!tme_serial_buffer_is_empty(&chan->tme_z8530_chan_buffer_tx)) {
+	  _tme_z8530_tx_copyout(z8530, chan,
+				buffer_input, sizeof(buffer_input),
+				&data_flags);
+	}
+	rc = TME_OK;
+      }
+
+      else {
+
+	/* unlock the mutex: */
+	tme_mutex_unlock(&z8530->tme_z8530_mutex);
       
-      /* do the callout: */
-      rc = (conn_serial != NULL
-	    ? ((*conn_serial->tme_serial_connection_ctrl)
-	       (conn_serial,
-		ctrl))
-	    : TME_OK);
+	/* do the callout: */
+	rc = ((*conn_serial->tme_serial_connection_ctrl)
+	      (conn_serial,
+	       ctrl));
       
-      /* lock the mutex: */
-      tme_mutex_lock(&z8530->tme_z8530_mutex);
+	/* lock the mutex: */
+	tme_mutex_lock(&z8530->tme_z8530_mutex);
+      }
       
       /* if the callout was unsuccessful, remember that at some
 	 later time this callout should be attempted again: */
@@ -1464,12 +1526,7 @@ _tme_z8530_read(struct tme_serial_connection *conn_serial,
 {
   struct tme_z8530 *z8530;
   struct tme_z8530_chan *chan;
-  tme_uint8_t rr3_ip_tx;
-  int new_callouts;
   int rc;
-
-  /* assume that we won't need to make any callouts: */
-  new_callouts = 0;
 
   /* recover our data structures: */
   z8530 = conn_serial->tme_serial_connection.tme_connection_element->tme_element_private;
@@ -1479,42 +1536,10 @@ _tme_z8530_read(struct tme_serial_connection *conn_serial,
   tme_mutex_lock(&z8530->tme_z8530_mutex);
 
   /* copy out data from the Tx FIFO: */
-  rc = tme_serial_buffer_copyout(&chan->tme_z8530_chan_buffer_tx,
-				 data, count,
-				 _data_flags,
-				 TME_SERIAL_COPY_NORMAL);
-
-  /* if the Tx buffer is now empty: */
-  if (tme_serial_buffer_is_empty(&chan->tme_z8530_chan_buffer_tx)) {
-
-    /* update RR0: */
-    chan->tme_z8530_chan_rdreg[0] |= TME_Z8530_RR0_TX_EMPTY;
-
-    /* update RR1: */
-    chan->tme_z8530_chan_rdreg[1] |= TME_Z8530_RR1_ALL_SENT;
-
-    /* if Tx interrupts are enabled: */
-    if (chan->tme_z8530_chan_wrreg[1] & TME_Z8530_WR1_TX_INT_ENABLE) {
-
-      /* get the IP_TX bit for this channel: */
-      rr3_ip_tx = ((chan == &z8530->tme_z8530_chan_a)
-		   ? TME_Z8530_RR3_CHAN_A_IP_TX
-		   : TME_Z8530_RR3_CHAN_B_IP_TX);
-
-      /* if the Tx buffer is newly empty, flag this channel for a Tx
-	 interrupt: */
-      if (!(z8530->tme_z8530_rr3 & rr3_ip_tx)) {
-	z8530->tme_z8530_rr3 |= rr3_ip_tx;
-	new_callouts |= TME_Z8530_CALLOUT_INT;
-      }
-    }
-
-    /* call out a new control to clear OK_READ: */
-    new_callouts |= TME_Z8530_CALLOUT_CTRL;
-  }
+  rc = _tme_z8530_tx_copyout(z8530, chan, data, count, _data_flags);
 
   /* make any needed callouts: */
-  _tme_z8530_callout(z8530, chan, new_callouts);
+  _tme_z8530_callout(z8530, chan, 0);
 
   /* unlock our mutex: */
   tme_mutex_unlock(&z8530->tme_z8530_mutex);
