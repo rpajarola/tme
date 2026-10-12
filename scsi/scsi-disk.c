@@ -38,6 +38,8 @@ _TME_RCSID("$Id: scsi-disk.c,v 1.3 2003/08/07 22:11:23 fredette Exp $");
 
 /* includes: */
 #include <tme/scsi/scsi-disk.h>
+#include <stdio.h>
+#include <string.h>
 #ifdef HAVE_STDARG_H
 #include <stdarg.h>
 #else  /* HAVE_STDARG_H */
@@ -601,6 +603,25 @@ tme_scsi_disk_connection_make(struct tme_connection *conn,
       = conn_scsi_disk;
     scsi_disk->tme_scsi_disk_device.tme_scsi_device_luns
       |= (1 << lun);
+
+    /* an ACB-4000 only has 6-byte READ and WRITE commands, which
+       can't address more than 1GB.  SunOS 3 also only uses those,
+       and a label for a bigger disk makes blocks past 1GB wrap
+       around onto the start of the disk, so warn about it: */
+    if (strcmp(scsi_disk->tme_scsi_disk_type, "acb4000") == 0) {
+      const struct tme_disk_connection *conn_disk_other;
+      tme_uint64_t size;
+
+      conn_disk_other = (const struct tme_disk_connection *) conn->tme_connection_other;
+      size = conn_disk_other->tme_disk_connection_size.tme_value64_uint;
+      if (size > ((tme_uint64_t) 1 << 21) * 512) {
+	fprintf(stderr,
+		"warning: an ACB-4000 SCSI disk can only use the first 1GB of its %lluMB image.\n"
+		"  a disk label for more than that makes writes past 1GB wrap around onto the\n"
+		"  start of the disk.  use tme-sunlabel to plan a label of at most 1GB.\n",
+		(unsigned long long) (size >> 20));
+      }
+    }
 
     /* unlock the mutex: */
     tme_mutex_unlock(&scsi_disk->tme_scsi_disk_mutex);
