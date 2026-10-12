@@ -119,6 +119,51 @@ _tme_sun4_ipl_check(struct tme_sun4 *sun4)
   return (ipl != TME_SPARC_IPL_NONE);
 }
 
+/* this notes that a bus has asserted or negated an interrupt line,
+   and returns nonzero iff any bus is now asserting it.  each bus only
+   reports changes to its own lines, so when two buses share a line,
+   one negating it mustn't hide the other still asserting it: */
+static int
+_tme_sun4_int_raised(struct tme_sun4 *sun4,
+		    struct tme_bus_connection *conn_bus_raiser,
+		    unsigned int ipl,
+		    int asserted)
+{
+  unsigned int raiser_i;
+  int asserted_any;
+
+  /* find this bus, adding it if needed: */
+  for (raiser_i = 0;
+       raiser_i < TME_SUN4_INT_RAISERS
+	 && sun4->tme_sun4_int_raisers[raiser_i] != NULL
+	 && sun4->tme_sun4_int_raisers[raiser_i] != conn_bus_raiser;
+       raiser_i++);
+  if (raiser_i == TME_SUN4_INT_RAISERS) {
+    abort();
+  }
+  sun4->tme_sun4_int_raisers[raiser_i] = conn_bus_raiser;
+
+  /* update the lines this bus is asserting: */
+  if (asserted) {
+    sun4->tme_sun4_int_raiser_signals[raiser_i] |= TME_BIT(ipl);
+  }
+  else {
+    sun4->tme_sun4_int_raiser_signals[raiser_i] &= ~TME_BIT(ipl);
+  }
+
+  /* the line is asserted while any bus asserts it: */
+  asserted_any = FALSE;
+  for (raiser_i = 0;
+       raiser_i < TME_SUN4_INT_RAISERS
+	 && sun4->tme_sun4_int_raisers[raiser_i] != NULL;
+       raiser_i++) {
+    if (sun4->tme_sun4_int_raiser_signals[raiser_i] & TME_BIT(ipl)) {
+      asserted_any = TRUE;
+    }
+  }
+  return (asserted_any);
+}
+
 /* our mainbus signal handler: */
 static int
 _tme_sun4_bus_signal(struct tme_bus_connection *conn_bus_raiser, unsigned int signal)
@@ -167,7 +212,7 @@ _tme_sun4_bus_signal(struct tme_bus_connection *conn_bus_raiser, unsigned int si
       sun4->tme_sun4_int_signals[ipl_index]
 	= ((sun4->tme_sun4_int_signals[ipl_index]
 	    & ~ipl_mask)
-	   | (signal_asserted
+	   | (_tme_sun4_int_raised(sun4, conn_bus_raiser, ipl, signal_asserted)
 	      ? ipl_mask
 	      : 0));
 

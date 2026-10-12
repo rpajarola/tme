@@ -150,6 +150,12 @@ struct tme_sun2 {
   /* the interrupt lines that are being asserted: */
   tme_uint8_t tme_sun2_int_signals[(TME_M68K_IPL_MAX + 1 + 7) >> 3];
 
+  /* the buses that raise interrupts, and the interrupt lines each is
+     asserting.  a line is asserted while any of them asserts it: */
+#define TME_SUN2_INT_RAISERS (8)
+  struct tme_bus_connection *tme_sun2_int_raisers[TME_SUN2_INT_RAISERS];
+  tme_uint32_t tme_sun2_int_raiser_signals[TME_SUN2_INT_RAISERS];
+
   /* the last ipl we gave to the CPU: */
   unsigned int tme_sun2_int_ipl_last;
 
