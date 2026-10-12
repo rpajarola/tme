@@ -64,4 +64,5 @@ Makefile
 /machine/sun/tme-sun-eeprom
 /machine/sun/tme-sun-idprom
 /tools/tme-mktap
+/tools/tme-sunlabel
 /tmesh/tmesh

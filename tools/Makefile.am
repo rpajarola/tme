@@ -4,5 +4,6 @@
 AUTOMAKE_OPTIONS = 1.4 gnu
 
 
-bin_PROGRAMS = tme-mktap
+bin_PROGRAMS = tme-mktap tme-sunlabel
 tme_mktap_SOURCES = tme-mktap.c
+tme_sunlabel_SOURCES = tme-sunlabel.c
