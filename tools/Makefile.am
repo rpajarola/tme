@@ -3,3 +3,6 @@
 
 AUTOMAKE_OPTIONS = 1.4 gnu
 
+
+bin_PROGRAMS = tme-mktap
+tme_mktap_SOURCES = tme-mktap.c

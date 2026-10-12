@@ -63,4 +63,5 @@ Makefile
 /ic/m68k/m68k-opmap-make
 /machine/sun/tme-sun-eeprom
 /machine/sun/tme-sun-idprom
+/tools/tme-mktap
 /tmesh/tmesh
