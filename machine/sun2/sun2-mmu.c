@@ -212,6 +212,13 @@ _tme_sun2_multibus_fault_handler(void *_sun2, struct tme_bus_tlb *tlb, struct tm
   return (_tme_sun2_bus_fault_handler((struct tme_sun2 *) _sun2, tlb, cycle, rc));
 }
 
+/* the cycle handler for the CPU's accesses to Multibus DVMA space: */
+static int
+_tme_sun2_dvma_timeout(void *junk, struct tme_bus_cycle *cycle)
+{
+  return (ENOENT);
+}
+
 /* our VMEbus fault handler: */
 static int
 _tme_sun2_vmebus_fault_handler(void *_sun2, struct tme_bus_tlb *tlb, struct tme_bus_cycle *cycle, int rc)
@@ -533,6 +540,22 @@ _tme_sun2_tlb_fill_mmu(void *_sun2, struct tme_bus_tlb *tlb,
 
   /* if this is mbmem: */
   else if (bus_type == TME_SUN2_PGTYPE_MBMEM) {
+
+    /* the start of mbmem is DVMA space, where Multibus masters reach
+       our memory.  we don't answer our own Multibus cycles there, so
+       the CPU's accesses time out.  SunOS probes this range when it
+       starts, and panics with "dvma collision" if anything answers: */
+    if (address < TME_SUN2_DVMA_SIZE_MBMEM) {
+      tme_bus_tlb_initialize(tlb);
+      tlb->tme_bus_tlb_addr_first = 0;
+      tlb->tme_bus_tlb_addr_last = TME_SUN2_DVMA_SIZE_MBMEM - 1;
+      tlb->tme_bus_tlb_cycles_ok = TME_BUS_CYCLE_READ | TME_BUS_CYCLE_WRITE;
+      tlb->tme_bus_tlb_cycle_private = NULL;
+      tlb->tme_bus_tlb_cycle = _tme_sun2_dvma_timeout;
+      TME_BUS_TLB_FAULT_HANDLER(tlb, _tme_sun2_multibus_fault_handler, sun2);
+      return (TME_OK);
+    }
+
     conn_bus = sun2->tme_sun2_mbmem;
     bus_fault_handler = _tme_sun2_multibus_fault_handler;
   }
