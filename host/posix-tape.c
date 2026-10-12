@@ -43,6 +43,8 @@ _TME_RCSID("$Id: posix-tape.c,v 1.7 2006/09/30 12:35:01 fredette Exp $");
 #include <fcntl.h>
 #include <stdlib.h>
 #include <strings.h>
+#include <string.h>
+#include <unistd.h>
 #include <sys/stat.h>
 #ifdef HAVE_STDARG_H
 #include <stdarg.h>
@@ -74,6 +76,12 @@ struct tme_posix_tape_control {
   unsigned int tme_posix_tape_control_which;
 };
 
+/* a record in a SIMH tape image.  a length of zero is a tape mark: */
+struct tme_posix_tape_simh_record {
+  off_t tme_posix_tape_simh_record_offset;
+  tme_uint32_t tme_posix_tape_simh_record_length;
+};
+
 /* a posix tape segment: */
 struct tme_posix_tape_segment {
 
@@ -89,6 +97,14 @@ struct tme_posix_tape_segment {
 
   /* this is nonzero iff this tape segment is a real tape: */
   int tme_posix_tape_segment_real_tape;
+
+  /* if this segment is a SIMH tape image, which holds a whole tape,
+     its records and tape marks, the current record, and how much of
+     the current record has been read: */
+  struct tme_posix_tape_simh_record *tme_posix_tape_segment_simh_records;
+  unsigned long tme_posix_tape_segment_simh_count;
+  unsigned long tme_posix_tape_segment_simh_record;
+  tme_uint32_t tme_posix_tape_segment_simh_offset;
 };
 
 /* a posix tape: */
@@ -284,8 +300,11 @@ _tme_posix_tape_segments_close(struct tme_posix_tape *posix_tape)
       tme_thread_close(segment->tme_posix_tape_segment_handle);
     }
 
-    /* free the segment filename: */
+    /* free the segment filename, and any SIMH records: */
     tme_free(segment->tme_posix_tape_segment_filename);
+    if (segment->tme_posix_tape_segment_simh_records != NULL) {
+      tme_free(segment->tme_posix_tape_segment_simh_records);
+    }
 
     /* free the segment itself: */
     tme_free(segment);
@@ -293,6 +312,228 @@ _tme_posix_tape_segments_close(struct tme_posix_tape *posix_tape)
 
   /* there is no current segment: */
   posix_tape->tme_posix_tape_segment_current = NULL;
+}
+
+/* this reads a 32-bit little-endian value from a SIMH tape image,
+   returning nonzero on success: */
+static int
+_tme_posix_tape_simh_word(int fd, off_t offset, tme_uint32_t *_value)
+{
+  tme_uint8_t bytes[4];
+
+  if (pread(fd, bytes, sizeof(bytes), offset) != sizeof(bytes)) {
+    return (FALSE);
+  }
+  *_value = (((tme_uint32_t) bytes[3] << 24)
+	     | ((tme_uint32_t) bytes[2] << 16)
+	     | ((tme_uint32_t) bytes[1] << 8)
+	     | bytes[0]);
+  return (TRUE);
+}
+
+/* this indexes a SIMH tape image (the .tap format used by simh and
+   others), returning zero if the file is one.  each record is a
+   32-bit little-endian header, the data padded to an even length,
+   and the header again.  the header's low 28 bits are the length,
+   and its high four bits a class: zero for good data, eight for data
+   with an error.  a zero header is a tape mark, 0xffffffff is the
+   end of the medium, and the other class 0xf headers, like erase
+   gaps, and class 0xe headers are markers without data, which are
+   skipped, as are private data records in classes one to seven: */
+static int
+_tme_posix_tape_simh_index(struct tme_posix_tape_segment *segment,
+			   int fd,
+			   off_t size)
+{
+  struct tme_posix_tape_simh_record *records;
+  unsigned long count, size_records;
+  off_t offset;
+  tme_uint32_t header, trailer, length, class;
+
+  records = NULL;
+  count = 0;
+  size_records = 0;
+  for (offset = 0; offset < size; ) {
+
+    /* read the next header: */
+    if (!_tme_posix_tape_simh_word(fd, offset, &header)) {
+      break;
+    }
+    offset += sizeof(header);
+    if (header == 0xffffffff) {
+      break;
+    }
+    class = header >> 28;
+    length = header & 0x0fffffff;
+
+    /* markers without data are skipped: */
+    if (class == 0xe || class == 0xf) {
+      continue;
+    }
+
+    /* a tape mark, or a record: */
+    if (header != 0) {
+
+      /* the record must end with the same header: */
+      if (offset + length + (length & 1) + (off_t) sizeof(trailer) > size
+	  || !_tme_posix_tape_simh_word(fd, offset + length + (length & 1), &trailer)
+	  || trailer != header) {
+	if (records != NULL) {
+	  tme_free(records);
+	}
+	return (EINVAL);
+      }
+
+      /* private data records are skipped: */
+      if (class != 0x0 && class != 0x8) {
+	offset += length + (length & 1) + sizeof(trailer);
+	continue;
+      }
+    }
+
+    /* add this tape mark or record: */
+    if (count == size_records) {
+      size_records = (size_records == 0 ? 1024 : size_records * 2);
+      records = (records == NULL
+		 ? tme_new(struct tme_posix_tape_simh_record, size_records)
+		 : tme_renew(struct tme_posix_tape_simh_record, records, size_records));
+    }
+    records[count].tme_posix_tape_simh_record_offset = offset;
+    records[count].tme_posix_tape_simh_record_length = length;
+    count++;
+    if (header != 0) {
+      offset += length + (length & 1) + sizeof(trailer);
+    }
+  }
+
+  /* an image without any records or tape marks isn't one: */
+  if (count == 0) {
+    if (records != NULL) {
+      tme_free(records);
+    }
+    return (EINVAL);
+  }
+
+  segment->tme_posix_tape_segment_simh_records = records;
+  segment->tme_posix_tape_segment_simh_count = count;
+  segment->tme_posix_tape_segment_simh_record = 0;
+  segment->tme_posix_tape_segment_simh_offset = 0;
+  return (TME_OK);
+}
+
+/* this reads from a SIMH tape image.  a variable block size read
+   reads one record, whatever its length, and a fixed block size read
+   reads the records in a file as one stream of blocks.  either stops
+   at a tape mark, which is skipped.  the end of the image reads like
+   a tape mark: */
+static int
+_tme_posix_tape_simh_read(struct tme_posix_tape *posix_tape,
+			  struct tme_posix_tape_segment *segment,
+			  int fixed,
+			  unsigned long xfer_factor,
+			  unsigned long count_bytes_user,
+			  int *_flags,
+			  unsigned long *_count_xfer,
+			  unsigned long *_count_bytes)
+{
+  struct tme_posix_tape_simh_record *record;
+  unsigned long done, chunk;
+  tme_uint32_t length;
+  int fd;
+
+  fd = tme_thread_fd(segment->tme_posix_tape_segment_handle, TME_FILE_RO);
+  done = 0;
+  for (;;) {
+
+    /* at the end of the image, or at a tape mark: */
+    if (segment->tme_posix_tape_segment_simh_record
+	>= segment->tme_posix_tape_segment_simh_count) {
+      *_flags |= TME_TAPE_FLAG_MARK;
+      break;
+    }
+    record = &segment->tme_posix_tape_segment_simh_records[segment->tme_posix_tape_segment_simh_record];
+    length = record->tme_posix_tape_simh_record_length;
+    if (length == 0) {
+      *_flags |= TME_TAPE_FLAG_MARK;
+      segment->tme_posix_tape_segment_simh_record++;
+      segment->tme_posix_tape_segment_simh_offset = 0;
+      break;
+    }
+
+    /* read what's wanted of the rest of this record: */
+    chunk = length - segment->tme_posix_tape_segment_simh_offset;
+    if (chunk > count_bytes_user - done) {
+      chunk = count_bytes_user - done;
+    }
+    if (chunk > 0
+	&& pread(fd,
+		 posix_tape->tme_posix_tape_buffer_data + done,
+		 chunk,
+		 (record->tme_posix_tape_simh_record_offset
+		  + segment->tme_posix_tape_segment_simh_offset)) != (ssize_t) chunk) {
+      *_count_xfer = 0;
+      *_count_bytes = 0;
+      return (errno == 0 ? EIO : errno);
+    }
+    done += chunk;
+    segment->tme_posix_tape_segment_simh_offset += chunk;
+
+    /* a variable block size read reads one record.  if the record
+       wasn't the length wanted, that's an incorrect length: */
+    if (!fixed) {
+      segment->tme_posix_tape_segment_simh_record++;
+      segment->tme_posix_tape_segment_simh_offset = 0;
+      if (length != count_bytes_user) {
+	*_flags |= TME_TAPE_FLAG_ILI;
+      }
+      *_count_xfer = length;
+      *_count_bytes = done;
+      return (TME_OK);
+    }
+
+    /* a fixed block size read continues into the next record: */
+    if (segment->tme_posix_tape_segment_simh_offset == length) {
+      segment->tme_posix_tape_segment_simh_record++;
+      segment->tme_posix_tape_segment_simh_offset = 0;
+    }
+    if (done == count_bytes_user) {
+      break;
+    }
+  }
+
+  *_count_bytes = done;
+  *_count_xfer = (fixed ? done / xfer_factor : done);
+  return (TME_OK);
+}
+
+/* this skips tape marks in a SIMH tape image.  skipping forward
+   leaves the tape after the last mark skipped, and skipping in
+   reverse leaves it before the last mark skipped: */
+static void
+_tme_posix_tape_simh_mark_skip(struct tme_posix_tape_segment *segment,
+			       unsigned int count,
+			       int forward)
+{
+  unsigned long record;
+
+  record = segment->tme_posix_tape_segment_simh_record;
+  if (forward) {
+    for (; count > 0 && record < segment->tme_posix_tape_segment_simh_count; record++) {
+      if (segment->tme_posix_tape_segment_simh_records[record].tme_posix_tape_simh_record_length == 0) {
+	count--;
+      }
+    }
+  }
+  else {
+    for (; count > 0 && record > 0; ) {
+      record--;
+      if (segment->tme_posix_tape_segment_simh_records[record].tme_posix_tape_simh_record_length == 0) {
+	count--;
+      }
+    }
+  }
+  segment->tme_posix_tape_segment_simh_record = record;
+  segment->tme_posix_tape_segment_simh_offset = 0;
 }
 
 /* this unloads a tape: */
@@ -364,6 +605,14 @@ _tme_posix_tape_rewind(struct tme_posix_tape *posix_tape)
   /* get the first segment: */
   segment = posix_tape->tme_posix_tape_segments;
 
+  /* a SIMH tape image is the whole tape, and stays open: */
+  if (segment->tme_posix_tape_segment_simh_records != NULL) {
+    posix_tape->tme_posix_tape_segment_current = segment;
+    segment->tme_posix_tape_segment_simh_record = 0;
+    segment->tme_posix_tape_segment_simh_offset = 0;
+    return (TME_OK);
+  }
+
   /* if this is a real tape: */
   if (segment->tme_posix_tape_segment_real_tape) {
 
@@ -409,6 +658,12 @@ _tme_posix_tape_mark_skip(struct tme_posix_tape *posix_tape,
      nothing: */
   if (segment == NULL
       || count == 0) {
+    return (TME_OK);
+  }
+
+  /* a SIMH tape image has its tape marks inside it: */
+  if (segment->tme_posix_tape_segment_simh_records != NULL) {
+    _tme_posix_tape_simh_mark_skip(segment, count, forward);
     return (TME_OK);
   }
 
@@ -526,6 +781,20 @@ _tme_posix_tape_xfer1(struct tme_posix_tape *posix_tape,
 
   /* if this is a read: */
   if (xfer_read) {
+
+    /* a SIMH tape image knows the length of its records: */
+    if (segment != NULL
+	&& segment->tme_posix_tape_segment_simh_records != NULL) {
+      return (_tme_posix_tape_simh_read(posix_tape,
+					segment,
+					(posix_tape->tme_posix_tape_buffer_flags
+					 & TME_TAPE_FLAG_FIXED),
+					xfer_factor,
+					count_bytes_user,
+					_flags,
+					_count_xfer,
+					_count_bytes));
+    }
 
     /* if we are out of segments: */
     if (segment == NULL) {
@@ -988,6 +1257,7 @@ __tme_posix_tape_command(struct tme_posix_tape *posix_tape,
   int rc;
   int new_callouts;
   int fd;
+  size_t len;
   
   /* assume we won't need any new callouts: */
   new_callouts = 0;
@@ -1095,6 +1365,27 @@ __tme_posix_tape_command(struct tme_posix_tape *posix_tape,
 	
 	/* this tape must be read-only: */
 	flags |= TME_POSIX_TAPE_FLAG_RO;
+
+	/* a file ending in .tap that is a SIMH tape image holds a
+	   whole tape, so it must be the only tape segment: */
+	len = strlen(args[arg_i]);
+	if (len > 4
+	    && strcasecmp(args[arg_i] + len - 4, ".tap") == 0
+	    && _tme_posix_tape_simh_index(segment, fd, statbuf.st_size) == TME_OK) {
+	  if (posix_tape->tme_posix_tape_segments != segment
+	      || args[arg_i + 1] != NULL) {
+	    tme_output_append_error(_output,
+				    _("a SIMH tape image must be the only tape segment: "));
+	    rc = EINVAL;
+	    break;
+	  }
+	  tme_log(&posix_tape->tme_posix_tape_element->tme_element_log_handle,
+		  0, TME_OK,
+		  (&posix_tape->tme_posix_tape_element->tme_element_log_handle,
+		   _("%s is a SIMH tape image of %lu records and tape marks"),
+		   args[arg_i],
+		   segment->tme_posix_tape_segment_simh_count));
+	}
       }
 
       tme_log(&posix_tape->tme_posix_tape_element->tme_element_log_handle,
