@@ -880,6 +880,26 @@ AC_SUBST(TME_HOST_PREOPEN_DEPS)
 
 AC_SYS_POSIX_TERMIOS
 
+dnl Checks for readline, or libedit's readline interface, for line
+dnl editing and history at the tmesh prompt.  only the callback
+dnl interface is used, so that the emulator keeps running while a
+dnl command is being typed:
+AC_ARG_WITH([readline],
+  [AS_HELP_STRING([--without-readline], [don't use readline or libedit for the tmesh prompt])],
+  [], [with_readline=yes])
+TME_READLINE_LIBS=
+if test "x${with_readline}" != xno; then
+   AC_CHECK_HEADERS([readline/readline.h], [
+     tme_save_LIBS=$LIBS
+     AC_SEARCH_LIBS([rl_callback_handler_install], [edit readline], [
+       AC_DEFINE([HAVE_READLINE], [1], [Define if you have readline or libedit with the callback interface.])
+       if test "x${ac_cv_search_rl_callback_handler_install}" != "xnone required"; then
+	 TME_READLINE_LIBS=${ac_cv_search_rl_callback_handler_install}
+       fi])
+     LIBS=$tme_save_LIBS])
+fi
+AC_SUBST(TME_READLINE_LIBS)
+
 AM_CONDITIONAL([USING_TERMIOS], [test "x${ac_cv_sys_posix_termios}" = xyes])
 
 AC_MSG_CHECKING([for available network address translation methods])

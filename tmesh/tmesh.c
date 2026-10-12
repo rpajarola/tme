@@ -42,6 +42,13 @@ _TME_RCSID("$Id: tmesh.c,v 1.4 2009/08/30 17:06:38 fredette Exp $");
 #include <tme/hash.h>
 #include <stdio.h>
 #include <string.h>
+#ifdef HAVE_READLINE
+#include <signal.h>
+#include <time.h>
+#include <unistd.h>
+#include <readline/readline.h>
+#include <readline/history.h>
+#endif /* HAVE_READLINE */
 /* macros: */
 
 /* the binary log message buffer size: */
@@ -95,6 +102,150 @@ static tme_uint32_t _tmesh_log_handle_next;
 
 /* a format hash: */
 static tme_hash_t _tmesh_log_hash_format;
+
+/* the standard input: */
+static struct _tmesh_input *_tmesh_input_stdin;
+
+#ifdef HAVE_READLINE
+
+/* the most history lines kept: */
+#define _TMESH_READLINE_HISTORY_MAX	(1000)
+
+/* nonzero iff the prompt uses readline: */
+static int _tmesh_readline;
+
+/* nonzero iff the readline prompt is up: */
+static int _tmesh_readline_up;
+
+/* nonzero iff readline has given us a complete line: */
+static int _tmesh_readline_line_done;
+
+/* the prompt, the history file, and the last line added to the
+   history: */
+static char _tmesh_readline_prompt[64];
+static char *_tmesh_readline_history;
+static char *_tmesh_readline_line_last;
+
+/* the time of the last Ctrl-C: */
+static volatile time_t _tmesh_sigint_last;
+
+/* this is called by readline with a complete line, or NULL at EOF: */
+static void
+_tmesh_readline_line(char *line)
+{
+  struct _tmesh_input *input;
+  size_t len;
+
+  /* take the prompt down while the command runs, so its output
+     doesn't get mixed up with the prompt: */
+  rl_callback_handler_remove();
+  _tmesh_readline_up = FALSE;
+  _tmesh_readline_line_done = TRUE;
+
+  /* at EOF, the input is done: */
+  input = _tmesh_input_stdin;
+  if (line == NULL) {
+    printf("\n");
+    input->_tmesh_input_buffer_eof = TRUE;
+    return;
+  }
+
+  /* add the line to the input: */
+  len = strlen(line);
+  if (input->_tmesh_input_buffer_head + len + 1
+      > sizeof(input->_tmesh_input_buffer)) {
+    fprintf(stderr, "%s: command too long\n", argv0);
+  }
+  else {
+    memcpy(input->_tmesh_input_buffer + input->_tmesh_input_buffer_head, line, len);
+    input->_tmesh_input_buffer_head += len;
+    input->_tmesh_input_buffer[input->_tmesh_input_buffer_head++] = '\n';
+  }
+
+  /* add the line to the history, unless it's empty or the same as
+     the last one: */
+  if (line[0] != '\0'
+      && (_tmesh_readline_line_last == NULL
+	  || strcmp(line, _tmesh_readline_line_last) != 0)) {
+    add_history(line);
+    free(_tmesh_readline_line_last);
+    _tmesh_readline_line_last = strdup(line);
+  }
+  free(line);
+}
+
+/* this puts the prompt up, if it isn't up: */
+static void
+_tmesh_readline_prompt_up(void)
+{
+  if (!_tmesh_readline_up) {
+    fflush(stdout);
+    rl_callback_handler_install(_tmesh_readline_prompt, _tmesh_readline_line);
+    _tmesh_readline_up = TRUE;
+  }
+}
+
+/* this puts the terminal back and saves the history, at exit: */
+static void
+_tmesh_readline_finish(void)
+{
+  if (_tmesh_readline_up) {
+    rl_callback_handler_remove();
+    _tmesh_readline_up = FALSE;
+  }
+  if (_tmesh_readline_history != NULL) {
+    write_history(_tmesh_readline_history);
+  }
+}
+
+/* this handles a Ctrl-C.  a second one within a few seconds exits: */
+static void
+_tmesh_sigint(int sig)
+{
+  static const char again[] = "\n(press Ctrl-C again to quit)\n";
+  time_t now;
+
+  now = time(NULL);
+  if (_tmesh_sigint_last != 0
+      && now - _tmesh_sigint_last <= 3) {
+    if (write(1, "\n", 1) < 0) {
+      /* nothing */
+    }
+    exit(0);
+  }
+  _tmesh_sigint_last = now;
+  if (write(1, again, sizeof(again) - 1) < 0) {
+    /* nothing */
+  }
+  if (_tmesh_readline_up) {
+    rl_forced_update_display();
+  }
+}
+
+/* this starts using readline for the prompt: */
+static void
+_tmesh_readline_start(void)
+{
+  const char *home;
+
+  _tmesh_readline = TRUE;
+  rl_readline_name = "tmesh";
+  snprintf(_tmesh_readline_prompt, sizeof(_tmesh_readline_prompt), "%s> ", argv0);
+
+  /* the history is kept in ~/.tmesh_history: */
+  stifle_history(_TMESH_READLINE_HISTORY_MAX);
+  home = getenv("HOME");
+  if (home != NULL) {
+    _tmesh_readline_history = tme_new(char, strlen(home) + sizeof("/.tmesh_history"));
+    sprintf(_tmesh_readline_history, "%s/.tmesh_history", home);
+    read_history(_tmesh_readline_history);
+  }
+
+  atexit(_tmesh_readline_finish);
+  signal(SIGINT, _tmesh_sigint);
+}
+
+#endif /* HAVE_READLINE */
 
 /* this removes all consumed characters from a buffer, and shifts
    everything else down: */
@@ -447,6 +598,32 @@ _tmesh_th(int *interactive)
   
   /* loop while we have a current input buffer: */
   for (;;) {
+
+#ifdef HAVE_READLINE
+    /* if readline is reading standard input: */
+    if (_tmesh_readline
+	&& input == _tmesh_input_stdin) {
+
+      /* put the prompt up, and wait until there's a character to
+	 read.  NB that when the wait yields, this thread starts over
+	 from the beginning: */
+      _tmesh_readline_prompt_up();
+      (void) tme_thread_read(input->_tmesh_input_handle,
+			     input->_tmesh_input_buffer,
+			     0,
+			     NULL);
+
+      /* give the character to readline.  continue until it has a
+	 whole line: */
+      rl_callback_read_char();
+      if (!_tmesh_readline_line_done) {
+	continue;
+      }
+      _tmesh_readline_line_done = FALSE;
+      rc = 0;
+    }
+    else
+#endif /* HAVE_READLINE */
     
     /* try to read more input: */
     rc = tme_thread_read(input->_tmesh_input_handle,
@@ -474,6 +651,12 @@ _tmesh_th(int *interactive)
     if (rc > 0) {
       input->_tmesh_input_buffer_head += rc;
     }
+#ifdef HAVE_READLINE
+    else if (_tmesh_readline
+	     && input == _tmesh_input_stdin) {
+      /* readline has already added the line, or set EOF */
+    }
+#endif /* HAVE_READLINE */
     else {
       input->_tmesh_input_buffer_eof = TRUE;
     }
@@ -495,8 +678,13 @@ _tmesh_th(int *interactive)
     /* If return to console & running interactive, then put up the next prompt, else exit thread: */
     if(input->_tmesh_input_handle == TME_STD_THREAD_HANDLE(stdin)) {
       if(!*interactive) break;
-      printf("%s> ", argv0);
-      fflush(stdout);
+#ifdef HAVE_READLINE
+      if (!_tmesh_readline)
+#endif /* HAVE_READLINE */
+      {
+	printf("%s> ", argv0);
+	fflush(stdout);
+      }
     }
     
     /* remove all consumed characters: */
@@ -858,6 +1046,7 @@ main(int argc, char **argv)
   /* create our stdin input buffer */
   input_stdin = tme_new0(struct _tmesh_input, 1);
   input_stdin->_tmesh_input_handle = TME_STD_THREAD_HANDLE(stdin);
+  _tmesh_input_stdin = input_stdin;
 
   input_stdin->_tmesh_input_buffer[sizeof(input_stdin->_tmesh_input_buffer) - 1] = '\0';
   
@@ -873,6 +1062,14 @@ main(int argc, char **argv)
   /* create our shell: */
   _tmesh = tmesh_new(&support, _tmesh_io);
   
+  /* if we're reading commands from a terminal, use readline: */
+#ifdef HAVE_READLINE
+  if (interactive && isatty(0)) {
+    _tmesh_readline_start();
+  }
+  else
+#endif /* HAVE_READLINE */
+
   /* evaluate pre-threads once (to avoid synchronization problems with init code): */
   if(interactive) printf("%s> ", argv0);
   for(rc = 0;arg_i<argc;arg_i++) {

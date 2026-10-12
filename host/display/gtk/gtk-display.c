@@ -61,6 +61,64 @@ _tme_gtk_display_update(struct tme_display *display) {
   return TME_OK;
 }
 
+/* this is called when the quit confirmation is answered: */
+static void
+_tme_gtk_screen_quit_response(GtkDialog *dialog,
+			      gint response,
+			      gpointer unused)
+{
+  gtk_widget_destroy(GTK_WIDGET(dialog));
+  if (response == GTK_RESPONSE_ACCEPT) {
+    exit(0);
+  }
+}
+
+/* this asks whether to quit the emulator: */
+static void
+_tme_gtk_screen_quit(struct tme_gtk_screen *screen)
+{
+  GtkWidget *dialog;
+
+  dialog
+    = gtk_message_dialog_new(GTK_WINDOW(screen->tme_gtk_screen_window),
+			     GTK_DIALOG_DESTROY_WITH_PARENT,
+			     GTK_MESSAGE_QUESTION,
+			     GTK_BUTTONS_NONE,
+			     _("Quit the emulator?"));
+  gtk_message_dialog_format_secondary_text(GTK_MESSAGE_DIALOG(dialog),
+					   _("The emulated machine will stop immediately."));
+  gtk_dialog_add_buttons(GTK_DIALOG(dialog),
+			 _("_Cancel"), GTK_RESPONSE_CANCEL,
+			 _("_Quit"), GTK_RESPONSE_ACCEPT,
+			 NULL);
+  gtk_dialog_set_default_response(GTK_DIALOG(dialog), GTK_RESPONSE_ACCEPT);
+
+  /* the dialog isn't modal, since running it would stop the
+     emulator: */
+  g_signal_connect(dialog, "response",
+		   G_CALLBACK(_tme_gtk_screen_quit_response), NULL);
+  gtk_widget_show(dialog);
+}
+
+/* this is called for the Quit menu item: */
+static void
+_tme_gtk_screen_quit_item(GtkWidget *menu_item,
+			  struct tme_gtk_screen *screen)
+{
+  _tme_gtk_screen_quit(screen);
+}
+
+/* this is called when the window is being closed: */
+static gboolean
+_tme_gtk_screen_delete(GtkWidget *window,
+		       GdkEvent *event,
+		       struct tme_gtk_screen *screen)
+{
+  /* closing the window quits the emulator, after asking: */
+  _tme_gtk_screen_quit(screen);
+  return (TRUE);
+}
+
 /* this sets the screen scaling to that indicated by the Scale menu: */
 static void
 _tme_gtk_screen_scale_default(GtkWidget *widget,
@@ -400,6 +458,9 @@ _tme_gtk_screen_new(struct tme_gdk_display *display,
   GtkWidget *menu;
   GtkWidget *submenu;
   GtkWidget *menu_item;
+  GtkAccelGroup *accel_group;
+  guint accel_key;
+  GdkModifierType accel_mods;
 
   screen = tme_screen_new(display, struct tme_gtk_screen, conn);
 
@@ -448,6 +509,22 @@ _tme_gtk_screen_new(struct tme_gdk_display *display,
   //  gtk_widget_show(menu_item);
   gtk_menu_item_set_submenu(GTK_MENU_ITEM(menu_item), submenu);
   gtk_menu_shell_append(GTK_MENU_SHELL(menu), menu_item);
+
+  /* create the Quit item, with Cmd-Q (Ctrl-Q other than on macOS): */
+  gtk_menu_shell_append(GTK_MENU_SHELL(menu), gtk_separator_menu_item_new());
+  accel_group = gtk_accel_group_new();
+  gtk_window_add_accel_group(GTK_WINDOW(screen->tme_gtk_screen_window), accel_group);
+  menu_item = gtk_menu_item_new_with_mnemonic(_("_Quit"));
+  gtk_accelerator_parse("<Primary>q", &accel_key, &accel_mods);
+  gtk_widget_add_accelerator(menu_item, "activate", accel_group,
+			     accel_key, accel_mods, GTK_ACCEL_VISIBLE);
+  g_signal_connect(menu_item, "activate",
+		   G_CALLBACK(_tme_gtk_screen_quit_item), screen);
+  gtk_menu_shell_append(GTK_MENU_SHELL(menu), menu_item);
+
+  /* closing the window asks whether to quit: */
+  g_signal_connect(screen->tme_gtk_screen_window, "delete-event",
+		   G_CALLBACK(_tme_gtk_screen_delete), screen);
 
   /* create the Screen menu bar item, attach the menu to it, and 
      attach the menu bar item to the menu bar: */

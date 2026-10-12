@@ -15,7 +15,7 @@ libtmesh_la_SOURCES = \
 libtmesh_la_LIBADD = $(top_builddir)/libtme/libtme.la
 
 bin_PROGRAMS = tmesh
-tmesh_LDADD = libtmesh.la $(LDADD)
+tmesh_LDADD = libtmesh.la $(LDADD) $(TME_READLINE_LIBS)
 tmesh_LDFLAGS = -dlpreopen force -dlopen self
 include $(top_srcdir)/tme-preopen.txt
 EXTRA_tmesh_DEPENDENCIES = $(TME_HOST_PREOPEN_DEPS)
