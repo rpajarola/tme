@@ -315,6 +315,8 @@ _tme_sunfb_callout(struct tme_sunfb *sunfb)
 	     & TME_SUNFB_S4_CONTROL_INT_ENABLE)
 	    && (sunfb->tme_sunfb_s4_regs.tme_sunfb_s4_regs_status
 		& TME_SUNFB_S4_STATUS_INT_PENDING))
+	 : sunfb->tme_sunfb_int_get != NULL
+	 ? (*sunfb->tme_sunfb_int_get)(sunfb)
 	 : FALSE);
     if ((!int_asserted != !sunfb->tme_sunfb_int_asserted)
 	&& (callouts_blocked & TME_SUNFB_CALLOUT_INT) == 0) {

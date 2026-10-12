@@ -41,6 +41,7 @@ _TME_RCSID("$Id: sun-bwtwo.c,v 1.6 2009/11/08 17:03:58 fredette Exp $");
 #include <tme/generic/bus-device.h>
 #include <tme/generic/fb.h>
 #include "sun-fb.h"
+#include <string.h>
 
 /* macros: */
 
@@ -199,20 +200,122 @@ _tme_sunbw2_bus_cycle_csr(void *_sunbw2, struct tme_bus_cycle *cycle_init)
 	     | TME_SUNBW2_CSR_JUMPER_COLOR
 	     | TME_SUNBW2_CSR_JUMPER_HIRES)));
 
-  /* we do not support these bits: */
-  if (csr_new
-      & (TME_SUNBW2_CSR_ENABLE_COPY
-	 | TME_SUNBW2_CSR_ENABLE_INT)) {
-    abort();
+  /* clearing the interrupt enable clears any active interrupt: */
+  if (!(csr_new & TME_SUNBW2_CSR_ENABLE_INT)) {
+    csr_new &= ~TME_SUNBW2_CSR_INT_ACTIVE;
   }
 
   /* set the new CSR value: */
   sunbw2->tme_sunbw2_csr = tme_htobe_u16(csr_new);
 
+  /* if the interrupt signal should change, wake the callout thread: */
+  if (!(csr_new & TME_SUNBW2_CSR_INT_ACTIVE)
+      != !sunbw2->tme_sunbw2_sunfb.tme_sunfb_int_asserted) {
+    tme_cond_notify(&sunbw2->tme_sunbw2_sunfb.tme_sunfb_callout_cond, FALSE);
+  }
+
   /* unlock the mutex: */
   tme_mutex_unlock(&sunbw2->tme_sunbw2_mutex);
 
   /* no faults: */
+  return (TME_OK);
+}
+
+/* this gets the state of the CSR interrupt: */
+static int
+_tme_sunbw2_int_get(struct tme_sunfb *sunfb)
+{
+  struct tme_sunbw2 *sunbw2;
+
+  /* recover our data structure: */
+  sunbw2 = (struct tme_sunbw2 *) sunfb;
+
+  return ((tme_betoh_u16(sunbw2->tme_sunbw2_csr) & TME_SUNBW2_CSR_INT_ACTIVE) != 0);
+}
+
+/* in copy mode, writes to a 128KB region of main memory, selected by
+   the copybase bits in the CSR, are also written to the framebuffer
+   memory, so that software can draw in (faster) main memory.  we
+   emulate this by copying that region into the framebuffer memory
+   before each display update.  this must be called with the mutex
+   locked: */
+static void
+_tme_sunbw2_copy(struct tme_sunbw2 *sunbw2, tme_uint16_t csr)
+{
+  struct tme_sunfb *sunfb;
+  struct tme_bus_connection *conn_bus;
+  struct tme_bus_tlb tlb;
+  struct tme_token token;
+  tme_bus_addr32_t copybase;
+  tme_uint32_t size, offset, count;
+
+  sunfb = &sunbw2->tme_sunbw2_sunfb;
+
+  /* get the region of main memory, and the size of the displayed
+     framebuffer memory: */
+  copybase = ((tme_bus_addr32_t) (csr & TME_SUNBW2_CSR_COPYBASE_MASK)) << 16;
+  size = (sunfb->tme_sunfb_memory_address_last_displayed
+	  - sunbw2->tme_sunbw2_bus_subregion_memory.tme_bus_subregion_address_first) + 1;
+
+  /* get our bus connection: */
+  conn_bus = tme_memory_atomic_pointer_read(struct tme_bus_connection *,
+					    sunfb->tme_sunfb_device.tme_bus_device_connection,
+					    &sunfb->tme_sunfb_device.tme_bus_device_connection_rwlock);
+
+  /* copy the region, as far as it can be read quickly: */
+  tme_token_init(&token);
+  for (offset = 0; offset < size; offset += count) {
+    tlb.tme_bus_tlb_token = &token;
+    if ((*conn_bus->tme_bus_tlb_fill)(conn_bus, &tlb, copybase + offset, TME_BUS_CYCLE_READ) != TME_OK
+	|| tlb.tme_bus_tlb_emulator_off_read == TME_EMULATOR_OFF_UNDEF
+	|| (copybase + offset) < tlb.tme_bus_tlb_addr_first
+	|| (copybase + offset) > tlb.tme_bus_tlb_addr_last) {
+      break;
+    }
+    count = TME_MIN(size - offset, (tlb.tme_bus_tlb_addr_last - (copybase + offset)) + 1);
+    memcpy(sunfb->tme_sunfb_memory + offset,
+	   (const tme_uint8_t *) (tlb.tme_bus_tlb_emulator_off_read + copybase + offset),
+	   count);
+  }
+}
+
+/* this is called before the display is updated, which we treat as a
+   vertical retrace: */
+static int
+_tme_sunbw2_memory_update(struct tme_fb_connection *conn_fb)
+{
+  struct tme_sunbw2 *sunbw2;
+  tme_uint16_t csr;
+
+  /* recover our data structure: */
+  sunbw2 = conn_fb->tme_fb_connection.tme_connection_element->tme_element_private;
+
+  /* lock the mutex: */
+  tme_mutex_lock(&sunbw2->tme_sunbw2_mutex);
+
+  /* in copy mode, copy main memory into the framebuffer memory: */
+  csr = tme_betoh_u16(sunbw2->tme_sunbw2_csr);
+  if (csr & TME_SUNBW2_CSR_ENABLE_COPY) {
+    _tme_sunbw2_copy(sunbw2, csr);
+  }
+
+  /* if the interrupt is enabled, it becomes active, and stays active
+     until it's disabled: */
+  if ((csr & TME_SUNBW2_CSR_ENABLE_INT)
+      && !(csr & TME_SUNBW2_CSR_INT_ACTIVE)) {
+    csr |= TME_SUNBW2_CSR_INT_ACTIVE;
+    sunbw2->tme_sunbw2_csr = tme_htobe_u16(csr);
+    tme_cond_notify(&sunbw2->tme_sunbw2_sunfb.tme_sunfb_callout_cond, FALSE);
+  }
+
+  /* like other bwtwos, we don't track which parts of the framebuffer
+     memory have been written, so the whole display must be checked: */
+  conn_fb->tme_fb_connection_offset_updated_first = 0;
+  conn_fb->tme_fb_connection_offset_updated_last = 0 - (tme_uint32_t) 1;
+
+  /* unlock the mutex: */
+  tme_mutex_unlock(&sunbw2->tme_sunbw2_mutex);
+
   return (TME_OK);
 }
 
@@ -275,8 +378,10 @@ _tme_sunbw2_type_set(struct tme_sunfb *sunfb, const char *bw2_type_string)
 	 + TME_SUNBW2_SIZ_CSR_PAGE
 	 - 1);
 
-    /* set the CSR bus cycle handler: */
+    /* set the CSR bus cycle handler, and the CSR interrupt: */
     sunfb->tme_sunfb_bus_handler_regs = _tme_sunbw2_bus_cycle_csr;
+    sunfb->tme_sunfb_int_get = _tme_sunbw2_int_get;
+    sunfb->tme_sunfb_memory_update = _tme_sunbw2_memory_update;
 
     /* the original Multibus bwtwo and onboard bwtwo only support
        1152x900 and 1024x1024: */

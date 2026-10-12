@@ -212,6 +212,12 @@ struct tme_sunfb {
 
   /* any interrupt signal: */
   tme_uint32_t tme_sunfb_bus_signal_int;
+
+  /* if not NULL, this is called with the mutex locked to get the
+     state of the interrupt of a framebuffer that doesn't have S4
+     registers.  it returns nonzero iff the interrupt should be
+     asserted: */
+  int (*tme_sunfb_int_get) _TME_P((struct tme_sunfb *));
 };
 
 /* prototypes: */
