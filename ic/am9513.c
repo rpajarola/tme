@@ -92,7 +92,6 @@ struct tme_am9513 {
 #define tme_am9513_address_data tme_am9513_socket.tme_am9513_socket_address_data
 #define tme_am9513_port_least_lane tme_am9513_socket.tme_am9513_socket_port_least_lane
 #define tme_am9513_basic_clock tme_am9513_socket.tme_am9513_socket_basic_clock
-  tme_uint32_t tme_am9513_basic_clock_msec;
 
   /* our mutex: */
   tme_mutex_t tme_am9513_mutex;
@@ -344,7 +343,7 @@ _tme_am9513_callout(struct tme_am9513 *am9513)
 static _tme_thret
 _tme_am9513_th_timer(struct tme_am9513 *am9513)
 {
-  tme_time_t then, elapsed;
+  tme_time_t now, elapsed, sleep;
   tme_uint16_t counter_mode;
   tme_uint32_t basic_elapsed;
   tme_uint32_t basic_sleep;
@@ -358,16 +357,23 @@ _tme_am9513_th_timer(struct tme_am9513 *am9513)
   /* loop forever: */
   for (;;) {
 
-    /* figure out how much time has elapsed since our last run: */
-    elapsed = tme_thread_get_time();
-    then = am9513->tme_am9513_conn_last;
-    am9513->tme_am9513_conn_last = elapsed;
-    elapsed -= then;
+    /* figure out how much time has elapsed since our last run.  after
+       a long pause, like the first run, catch up at most one second: */
+    now = tme_thread_get_time();
+    elapsed = now - am9513->tme_am9513_conn_last;
+    if (elapsed > TME_TIME_SET_SEC(1)) {
+      elapsed = TME_TIME_SET_SEC(1);
+      am9513->tme_am9513_conn_last = now - elapsed;
+    }
 
-    /* calculate the number of basic ticks that have elapsed: */
-    basic_elapsed = am9513->tme_am9513_basic_clock;
-    basic_elapsed *= TME_TIME_GET_SEC(elapsed);
-    basic_elapsed += am9513->tme_am9513_basic_clock_msec * TME_TIME_GET_MSEC(elapsed % TME_FRAC_PER_SEC);
+    /* calculate the number of whole basic ticks that have elapsed,
+       and carry any part of a tick over into the next run.  counting
+       only whole milliseconds here, and dropping the rest, stopped a
+       counter that wakes us more often than once a millisecond: */
+    basic_elapsed = (elapsed * am9513->tme_am9513_basic_clock) / TME_FRAC_PER_SEC;
+    am9513->tme_am9513_conn_last
+      += (((tme_time_t) basic_elapsed * TME_FRAC_PER_SEC)
+	  / am9513->tme_am9513_basic_clock);
 
     /* assume that we will sleep for one second: */
     basic_sleep = am9513->tme_am9513_basic_clock;
@@ -494,8 +500,11 @@ _tme_am9513_th_timer(struct tme_am9513 *am9513)
       _tme_am9513_callout(am9513);
     }
 
-    /* sleep: */
-    tme_thread_sleep_yield(TME_TIME_SET_USEC((basic_sleep * 1000) / am9513->tme_am9513_basic_clock_msec), &am9513->tme_am9513_mutex);
+    /* sleep, rounding up so we don't wake up before the next counter
+       expires, and never for zero time, which would mean forever: */
+    sleep = (((tme_time_t) basic_sleep * TME_FRAC_PER_SEC)
+	     + am9513->tme_am9513_basic_clock - 1) / am9513->tme_am9513_basic_clock;
+    tme_thread_sleep_yield(TME_MAX(sleep, 1), &am9513->tme_am9513_mutex);
   }
   /* NOTREACHED */
   tme_thread_exit(&am9513->tme_am9513_mutex);
@@ -1002,7 +1011,6 @@ TME_ELEMENT_NEW_DECL(tme_ic_am9513) {
   /* start the am9513 structure: */
   am9513 = tme_new0(struct tme_am9513, 1);
   am9513->tme_am9513_socket = socket_real;
-  am9513->tme_am9513_basic_clock_msec = am9513->tme_am9513_basic_clock / 1000;
   am9513->tme_am9513_element = element;
   _tme_am9513_reset(am9513);
 
