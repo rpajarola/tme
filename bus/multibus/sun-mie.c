@@ -110,8 +110,10 @@ _TME_RCSID("$Id: sun-mie.c,v 1.4 2010/06/05 13:57:27 fredette Exp $");
 #define TME_SUN_MIE_PCR_PE_AHI	(0x000f)
 #define TME_SUN_MIE_PCR_READONLY	(~TME_SUN_MIE_PCR_PEACK)
 
-/* the size of the memory port: */
-#define TME_SUN_MIE_SIZ_MBM	(0x10000)
+/* the size of the memory port.  it covers all of the board memory,
+   and it must start at an address with A15..A0 zero: */
+#define TME_SUN_MIE_SIZ_MBM	(TME_SUN_MIE_MEMSIZE)
+#define TME_SUN_MIE_ALIGN_MBM	(0x10000)
 
 /* these get and put the CSR: */
 #define TME_SUN_MIE_CSR_GET(sun_mie)	\
@@ -683,8 +685,9 @@ _tme_sun_mie_tlb_fill(struct tme_bus_connection *conn_bus,
 
   /* this TLB entry allows fast reading and writing: */
   tlb->tme_bus_tlb_emulator_off_write = 
-    (&sun_mie->tme_sun_mie_memory[((pgmap & TME_SUN_MIE_PGMAP_PFNUM)
-				   * TME_SUN_MIE_PAGESIZE)]
+    (&sun_mie->tme_sun_mie_memory[(((pgmap & TME_SUN_MIE_PGMAP_PFNUM)
+				    * TME_SUN_MIE_PAGESIZE)
+				   & (TME_SUN_MIE_MEMSIZE - 1))]
      - address);
   tlb->tme_bus_tlb_emulator_off_read = 
     tlb->tme_bus_tlb_emulator_off_write;
@@ -920,7 +923,7 @@ _tme_sun_mie_connections_new(struct tme_element *element,
       mpmhi = tme_bus_addr_parse_any(args[2], &usage);
       if (!usage
 	  && ((mpmhi > 0xfffff)
-	      || (mpmhi & (TME_SUN_MIE_SIZ_MBM - 1)))) {
+	      || (mpmhi & (TME_SUN_MIE_ALIGN_MBM - 1)))) {
 	tme_output_append_error(_output,
 				"%s %s, ",
 				args[2],
