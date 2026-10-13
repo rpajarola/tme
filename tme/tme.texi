@@ -925,6 +925,19 @@ host.
 
 @item peer @var{address} @var{port}
 A peer that always receives frames.  This can be repeated.
+
+@item l2tp
+Carry frames in static L2TPv3 instead of raw, see below.
+
+@item session @var{id}
+The L2TPv3 session ID, used in both directions.  The default is 1.
+
+@item cookie @var{hex}
+The L2TPv3 cookie, 8 or 16 hex digits (optionally with 0x), used in
+both directions.  The default is no cookie.
+
+@item nocounter
+Leave out the L2TPv3 L2-specific sublayer, which is sent by default.
 @end table
 
 Addresses can also be given as one quoted argument, as
@@ -947,6 +960,24 @@ delivery guarantees.  There is no authentication or privacy either:
 anyone who can send datagrams to the listening port can put frames on
 the network and receive its broadcasts, so prefer loopback addresses,
 and a warning is logged for any other.
+
+With @code{l2tp}, frames are carried in static L2TPv3 over UDP (RFC
+3931, Ethernet as in RFC 4719) as Linux's @code{ip l2tp}, QEMU's
+@code{-netdev l2tpv3} and gobootd's @code{bootbridge -l2tp} speak it,
+without the control connection:
+
+@code{udp0 at ie0: tme/host/udp/eth listen 0.0.0.0 1701 peer 192.168.1.10 1701 l2tp cookie 0x0123456789abcdef}
+
+Datagrams with another session ID or cookie are dropped before their
+sender is learned, so the cookie works as a password against anyone
+who can't see the traffic.  It is sent in clear, so across untrusted
+networks carry the UDP over WireGuard or an SSH tunnel.  Both ends must
+agree on the session, the cookie and whether the sublayer is used.
+
+In both modes, the element sends its fixed peers a keepalive every 60
+seconds, an Ethernet loopback frame addressed to its sender, so that a
+peer which learns its peers keeps sending broadcasts to an idle
+machine.  Keepalives received are dropped.
 
 Here is a peer-to-peer connection between two machines on different
 hosts:

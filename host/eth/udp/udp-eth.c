@@ -39,7 +39,24 @@
    any address that sends us a frame becomes a peer until it has been
    quiet for TME_UDP_PEER_TIMEOUT seconds.  unicast frames go only to
    the peer that last sent a frame from that destination address;
-   broadcast, multicast and unknown destinations go to every peer: */
+   broadcast, multicast and unknown destinations go to every peer.
+
+   with "l2tp", frames are carried in static L2TPv3 over UDP (RFC
+   3931, Ethernet as in RFC 4719), as Linux's "ip l2tp", QEMU's
+   "-netdev l2tpv3" and bootbridge's -l2tp speak it, without the
+   control connection.  each datagram is
+
+     flags and version (4) | session ID (4) | cookie (0, 4 or 8) |
+     [L2-specific sublayer (4)] | Ethernet frame
+
+   datagrams with another session ID or cookie are dropped before
+   their sender is learned, so the cookie works as a password against
+   anyone who can't see the traffic.  it is sent in clear.
+
+   every TME_UDP_KEEPALIVE seconds we send the fixed peers a keepalive,
+   an Ethernet loopback frame addressed to its sender, so that a
+   bridge that learns its peers keeps sending us broadcasts while the
+   emulated machine is quiet.  keepalives we receive are dropped: */
 
 #include <tme/common.h>
 
@@ -58,6 +75,18 @@
 /* seconds after which a quiet learned peer is forgotten.  this is
    the HECnet bridge's timeout for passive peers: */
 #define TME_UDP_PEER_TIMEOUT	(180)
+
+/* seconds between keepalives: */
+#define TME_UDP_KEEPALIVE	(60)
+
+/* the ethertype of keepalives (Ethernet configuration testing): */
+#define TME_UDP_ETHERTYPE_LOOPBACK (0x9000)
+
+/* the first word of an L2TPv3 data message: T bit clear, version 3: */
+#define TME_UDP_L2TP_DATA	(0x00030000)
+
+/* the longest L2TPv3 header: */
+#define TME_UDP_L2TP_HEADER_MAX	(4 + 4 + 8 + 4)
 
 /* the smallest frame we send or pass on, without the CRC: */
 #define TME_UDP_FRAME_MIN	(TME_ETHERNET_FRAME_MIN - TME_ETHERNET_CRC_SIZE)
@@ -132,6 +161,31 @@ struct tme_udp {
 
   /* the learned Ethernet addresses: */
   struct tme_udp_addr tme_udp_addrs[TME_UDP_ADDRS_MAX];
+
+  /* nonzero if frames are carried in L2TPv3, the session and cookie,
+     whether the L2-specific sublayer is used, and the length of the
+     header: */
+  int tme_udp_l2tp;
+  tme_uint32_t tme_udp_l2tp_session;
+  tme_uint8_t tme_udp_l2tp_cookie[8];
+  unsigned int tme_udp_l2tp_cookie_len;
+  int tme_udp_l2tp_counter;
+  unsigned int tme_udp_l2tp_header_len;
+
+  /* the header of the next L2TPv3 frame we send, and of the last one
+     we received: */
+  tme_uint32_t tme_udp_l2tp_seq;
+  tme_uint8_t tme_udp_l2tp_header_out[TME_UDP_L2TP_HEADER_MAX];
+  tme_uint8_t tme_udp_l2tp_header_in[TME_UDP_L2TP_HEADER_MAX];
+
+  /* nonzero after we warned about a datagram with the wrong session
+     or cookie: */
+  int tme_udp_l2tp_warned;
+
+  /* when the next keepalive is due, and the address keepalives come
+     from when the emulated interface hasn't told us its own: */
+  time_t tme_udp_keepalive_next;
+  tme_uint8_t tme_udp_keepalive_addr[TME_ETHERNET_ADDR_SIZE];
 };
 
 /* this returns nonzero if two socket addresses are the same: */
@@ -442,15 +496,53 @@ _tme_udp_addr_lookup(struct tme_udp *udp, const tme_uint8_t *addr)
   return (-1);
 }
 
-/* this sends a frame to one peer: */
+/* this stores a big-endian 32-bit value: */
 static void
-_tme_udp_send(struct tme_udp *udp, struct tme_udp_peer *peer, size_t len)
+_tme_udp_put32(tme_uint8_t *p, tme_uint32_t v)
+{
+  p[0] = v >> 24;
+  p[1] = v >> 16;
+  p[2] = v >> 8;
+  p[3] = v;
+}
+
+/* this loads a big-endian 32-bit value: */
+static tme_uint32_t
+_tme_udp_get32(const tme_uint8_t *p)
+{
+  return (((tme_uint32_t) p[0] << 24)
+	  | ((tme_uint32_t) p[1] << 16)
+	  | ((tme_uint32_t) p[2] << 8)
+	  | p[3]);
+}
+
+/* this sends a frame to one peer, with the L2TPv3 header made by
+   _tme_udp_write if we use L2TPv3: */
+static void
+_tme_udp_send_frame(struct tme_udp *udp, struct tme_udp_peer *peer,
+		    const tme_uint8_t *frame, size_t len)
 {
   char addr_buf[INET6_ADDRSTRLEN + 16];
+  struct msghdr msg;
+  struct iovec iov[2];
+  unsigned int iov_i;
 
-  if (sendto(udp->tme_udp_fd, udp->tme_udp_buffer_out, len, 0,
-	     (const struct sockaddr *) &peer->tme_udp_peer_addr,
-	     peer->tme_udp_peer_addr_len) < 0) {
+  iov_i = 0;
+  if (udp->tme_udp_l2tp) {
+    iov[iov_i].iov_base = udp->tme_udp_l2tp_header_out;
+    iov[iov_i].iov_len = udp->tme_udp_l2tp_header_len;
+    iov_i++;
+  }
+  iov[iov_i].iov_base = (void *) frame;
+  iov[iov_i].iov_len = len;
+  iov_i++;
+  memset(&msg, 0, sizeof(msg));
+  msg.msg_name = (void *) &peer->tme_udp_peer_addr;
+  msg.msg_namelen = peer->tme_udp_peer_addr_len;
+  msg.msg_iov = iov;
+  msg.msg_iovlen = iov_i;
+
+  if (sendmsg(udp->tme_udp_fd, &msg, 0) < 0) {
 
     /* like Ethernet, we don't guarantee delivery: */
     tme_log(&udp->tme_udp_element->tme_element_log_handle, 1, errno,
@@ -460,6 +552,69 @@ _tme_udp_send(struct tme_udp *udp, struct tme_udp_peer *peer, size_t len)
 				      peer->tme_udp_peer_addr_len,
 				      addr_buf, sizeof(addr_buf))));
   }
+}
+
+/* this sends a frame from the output buffer to one peer: */
+static void
+_tme_udp_send(struct tme_udp *udp, struct tme_udp_peer *peer, size_t len)
+{
+  _tme_udp_send_frame(udp, peer, udp->tme_udp_buffer_out, len);
+}
+
+/* this makes the L2TPv3 header for the next frame we send: */
+static void
+_tme_udp_l2tp_header(struct tme_udp *udp)
+{
+  tme_uint8_t *header;
+
+  if (!udp->tme_udp_l2tp) {
+    return;
+  }
+  header = udp->tme_udp_l2tp_header_out;
+  _tme_udp_put32(header, TME_UDP_L2TP_DATA);
+  _tme_udp_put32(header + 4, udp->tme_udp_l2tp_session);
+  memcpy(header + 8, udp->tme_udp_l2tp_cookie, udp->tme_udp_l2tp_cookie_len);
+  if (udp->tme_udp_l2tp_counter) {
+    udp->tme_udp_l2tp_seq++;
+    _tme_udp_put32(header + 8 + udp->tme_udp_l2tp_cookie_len,
+		   0x40000000 | (udp->tme_udp_l2tp_seq & 0xffffff));
+  }
+}
+
+/* this sends a keepalive to the fixed peers if one is due, and
+   returns the seconds until the next one: */
+static time_t
+_tme_udp_keepalive(struct tme_udp *udp, time_t now)
+{
+  tme_uint8_t frame[TME_UDP_FRAME_MIN];
+  const tme_uint8_t *addr;
+  unsigned int peer_i;
+
+  if (now < udp->tme_udp_keepalive_next) {
+    return (udp->tme_udp_keepalive_next - now);
+  }
+  udp->tme_udp_keepalive_next = now + TME_UDP_KEEPALIVE;
+
+  /* a loopback reply from the emulated interface to itself: skip
+     count 0, function 1 (reply), receipt number 0: */
+  addr = (udp->tme_udp_eth->tme_eth_addr != NULL
+	  ? udp->tme_udp_eth->tme_eth_addr
+	  : udp->tme_udp_keepalive_addr);
+  memset(frame, 0, sizeof(frame));
+  memcpy(frame, addr, TME_ETHERNET_ADDR_SIZE);
+  memcpy(frame + TME_ETHERNET_ADDR_SIZE, addr, TME_ETHERNET_ADDR_SIZE);
+  frame[12] = TME_UDP_ETHERTYPE_LOOPBACK >> 8;
+  frame[13] = TME_UDP_ETHERTYPE_LOOPBACK & 0xff;
+  frame[16] = 1;
+
+  _tme_udp_l2tp_header(udp);
+  for (peer_i = 0; peer_i < TME_UDP_PEERS_MAX; peer_i++) {
+    if (udp->tme_udp_peers[peer_i].tme_udp_peer_used
+	&& udp->tme_udp_peers[peer_i].tme_udp_peer_fixed) {
+      _tme_udp_send_frame(udp, &udp->tme_udp_peers[peer_i], frame, sizeof(frame));
+    }
+  }
+  return (TME_UDP_KEEPALIVE);
 }
 
 /* this is called with the Ethernet mutex locked to send a frame: */
@@ -484,6 +639,7 @@ _tme_udp_write(void *data)
   }
 
   _tme_udp_peers_expire(udp, time(NULL));
+  _tme_udp_l2tp_header(udp);
 
   /* send a unicast frame only to the peer its destination is behind,
      and anything else to every peer: */
@@ -514,8 +670,12 @@ _tme_udp_read(void *data)
   int events_max;
   struct event_set_return esr;
   struct sockaddr_storage from;
-  socklen_t from_len;
+  struct msghdr msg;
+  struct iovec iov[2];
+  unsigned int iov_i;
   const struct tme_ethernet_header *header;
+  const tme_uint8_t *l2tp;
+  struct timeval timeout;
   ssize_t len;
   time_t now;
   int peer_i;
@@ -526,6 +686,11 @@ _tme_udp_read(void *data)
 
   for (;;) {
 
+    /* send a keepalive if one is due, and wait no longer than until
+       the next one: */
+    timeout.tv_sec = _tme_udp_keepalive(udp, time(NULL));
+    timeout.tv_usec = 0;
+
     /* wait until the socket is readable.  this unlocks the mutex
        while waiting.  with cooperative threads a wait that blocks
        never returns: the thread frees the event set and restarts
@@ -534,7 +699,7 @@ _tme_udp_read(void *data)
     events_max = 1;
     events = tme_event_set_init(&events_max, EVENT_METHOD_FAST);
     tme_event_ctl(events, udp->tme_udp_fd, EVENT_READ, 0);
-    rc = tme_event_wait(events, NULL, &esr, 1, &eth->tme_eth_mutex);
+    rc = tme_event_wait(events, &timeout, &esr, 1, &eth->tme_eth_mutex);
     tme_event_free(events);
     if (rc < 0) {
       return (rc);
@@ -545,16 +710,46 @@ _tme_udp_read(void *data)
 
     /* the socket is nonblocking, in case another reader got the
        datagram first: */
-    from_len = sizeof(from);
-    len = recvfrom(udp->tme_udp_fd,
-		   udp->tme_udp_buffer_in, sizeof(udp->tme_udp_buffer_in),
-		   0, (struct sockaddr *) &from, &from_len);
+    iov_i = 0;
+    if (udp->tme_udp_l2tp) {
+      iov[iov_i].iov_base = udp->tme_udp_l2tp_header_in;
+      iov[iov_i].iov_len = udp->tme_udp_l2tp_header_len;
+      iov_i++;
+    }
+    iov[iov_i].iov_base = udp->tme_udp_buffer_in;
+    iov[iov_i].iov_len = sizeof(udp->tme_udp_buffer_in);
+    iov_i++;
+    memset(&msg, 0, sizeof(msg));
+    msg.msg_name = &from;
+    msg.msg_namelen = sizeof(from);
+    msg.msg_iov = iov;
+    msg.msg_iovlen = iov_i;
+    len = recvmsg(udp->tme_udp_fd, &msg, 0);
     if (len < 0) {
       if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR
 	  || errno == ECONNREFUSED) {
 	continue;
       }
       return (-1);
+    }
+
+    /* drop L2TPv3 datagrams that aren't for our session, without
+       learning anything from them: */
+    if (udp->tme_udp_l2tp) {
+      l2tp = udp->tme_udp_l2tp_header_in;
+      if (len < (ssize_t) udp->tme_udp_l2tp_header_len
+	  || (_tme_udp_get32(l2tp) & 0x800f0000) != TME_UDP_L2TP_DATA
+	  || _tme_udp_get32(l2tp + 4) != udp->tme_udp_l2tp_session
+	  || memcmp(l2tp + 8, udp->tme_udp_l2tp_cookie, udp->tme_udp_l2tp_cookie_len)) {
+	if (!udp->tme_udp_l2tp_warned) {
+	  udp->tme_udp_l2tp_warned = TRUE;
+	  tme_log(&udp->tme_udp_element->tme_element_log_handle, 0, TME_OK,
+		  (&udp->tme_udp_element->tme_element_log_handle,
+		   _("dropping datagrams with the wrong L2TPv3 session or cookie")));
+	}
+	continue;
+      }
+      len -= udp->tme_udp_l2tp_header_len;
     }
 
     /* drop datagrams that can't be Ethernet frames: */
@@ -569,10 +764,19 @@ _tme_udp_read(void *data)
     /* learn the peer and the frame's source address: */
     now = time(NULL);
     _tme_udp_peers_expire(udp, now);
-    peer_i = _tme_udp_peer_learn(udp, &from, from_len, now);
+    peer_i = _tme_udp_peer_learn(udp, &from, msg.msg_namelen, now);
     header = (const struct tme_ethernet_header *) udp->tme_udp_buffer_in;
     if (peer_i >= 0) {
       _tme_udp_addr_learn(udp, header->tme_ethernet_header_src, peer_i, now);
+    }
+
+    /* drop keepalives, loopback frames addressed to their sender: */
+    if (((header->tme_ethernet_header_type[0] << 8)
+	 | header->tme_ethernet_header_type[1]) == TME_UDP_ETHERTYPE_LOOPBACK
+	&& !memcmp(header->tme_ethernet_header_dst,
+		   header->tme_ethernet_header_src,
+		   TME_ETHERNET_ADDR_SIZE)) {
+      continue;
     }
 
     /* pad short frames to the Ethernet minimum: */
@@ -585,20 +789,68 @@ _tme_udp_read(void *data)
   }
 }
 
-/* this parses our arguments: */
+/* this parses an L2TPv3 cookie of 8 or 16 hex digits, optionally
+   with 0x: */
+static int
+_tme_udp_arg_cookie(const char *arg, struct tme_udp *udp)
+{
+  unsigned int digit_i;
+  unsigned int digits;
+  int c;
+  int nibble;
+
+  if (arg == NULL) {
+    return (EINVAL);
+  }
+  if (arg[0] == '0' && (arg[1] == 'x' || arg[1] == 'X')) {
+    arg += 2;
+  }
+  digits = strlen(arg);
+  if (digits != 8 && digits != 16) {
+    return (EINVAL);
+  }
+  memset(udp->tme_udp_l2tp_cookie, 0, sizeof(udp->tme_udp_l2tp_cookie));
+  for (digit_i = 0; digit_i < digits; digit_i++) {
+    c = arg[digit_i];
+    if (c >= '0' && c <= '9') {
+      nibble = c - '0';
+    }
+    else if (c >= 'a' && c <= 'f') {
+      nibble = c - 'a' + 10;
+    }
+    else if (c >= 'A' && c <= 'F') {
+      nibble = c - 'A' + 10;
+    }
+    else {
+      return (EINVAL);
+    }
+    udp->tme_udp_l2tp_cookie[digit_i / 2] |= nibble << ((digit_i % 2) ? 0 : 4);
+  }
+  udp->tme_udp_l2tp_cookie_len = digits / 2;
+  return (TME_OK);
+}
+
+/* this parses our arguments, and puts the L2TPv3 settings into udp: */
 static int
 _tme_udp_args(const char * const args[],
 	      struct tme_udp_addr_arg *listen_arg,
 	      struct tme_udp_addr_arg *peer_args,
 	      unsigned int *_peers_count,
+	      struct tme_udp *udp,
 	      char **_output)
 {
   int arg_i;
   int usage;
+  int l2tp_option;
+  unsigned long session;
+  char *end;
 
   usage = FALSE;
+  l2tp_option = FALSE;
   listen_arg->tme_udp_addr_arg_host = NULL;
   *_peers_count = 0;
+  udp->tme_udp_l2tp_session = 1;
+  udp->tme_udp_l2tp_counter = TRUE;
 
   for (arg_i = 1;;) {
 
@@ -613,6 +865,38 @@ _tme_udp_args(const char * const args[],
 	     && *_peers_count < TME_UDP_PEERS_MAX
 	     && _tme_udp_arg_addr(args, &arg_i, &peer_args[*_peers_count]) == TME_OK) {
       (*_peers_count)++;
+    }
+
+    /* L2TPv3 instead of raw frames: */
+    else if (TME_ARG_IS(args[arg_i + 0], "l2tp")
+	     && !udp->tme_udp_l2tp) {
+      udp->tme_udp_l2tp = TRUE;
+      arg_i++;
+    }
+
+    /* the L2TPv3 session ID: */
+    else if (TME_ARG_IS(args[arg_i + 0], "session")
+	     && args[arg_i + 1] != NULL
+	     && (session = strtoul(args[arg_i + 1], &end, 0), *end == '\0')
+	     && session != 0
+	     && session <= 0xffffffffUL) {
+      udp->tme_udp_l2tp_session = session;
+      l2tp_option = TRUE;
+      arg_i += 2;
+    }
+
+    /* the L2TPv3 cookie: */
+    else if (TME_ARG_IS(args[arg_i + 0], "cookie")
+	     && _tme_udp_arg_cookie(args[arg_i + 1], udp) == TME_OK) {
+      l2tp_option = TRUE;
+      arg_i += 2;
+    }
+
+    /* no L2-specific sublayer: */
+    else if (TME_ARG_IS(args[arg_i + 0], "nocounter")) {
+      udp->tme_udp_l2tp_counter = FALSE;
+      l2tp_option = TRUE;
+      arg_i++;
     }
 
     /* if we ran out of arguments: */
@@ -634,6 +918,10 @@ _tme_udp_args(const char * const args[],
   if (listen_arg->tme_udp_addr_arg_host == NULL && *_peers_count == 0) {
     usage = TRUE;
   }
+  if (l2tp_option && !udp->tme_udp_l2tp) {
+    tme_output_append_error(_output, _("session, cookie and nocounter need l2tp"));
+    usage = TRUE;
+  }
 
   if (usage) {
     if (listen_arg->tme_udp_addr_arg_host != NULL) {
@@ -641,13 +929,15 @@ _tme_udp_args(const char * const args[],
     }
     _tme_udp_addr_args_free(peer_args, *_peers_count);
     tme_output_append_error(_output,
-			    "%s %s [ listen %s %s ] [ peer %s %s ]...",
+			    "%s %s [ listen %s %s ] [ peer %s %s ]... [ l2tp [ session %s ] [ cookie %s ] [ nocounter ] ]",
 			    _("usage:"),
 			    args[0],
 			    _("ADDRESS"),
 			    _("PORT"),
 			    _("ADDRESS"),
-			    _("PORT"));
+			    _("PORT"),
+			    _("ID"),
+			    _("HEX"));
     return (EINVAL);
   }
   return (TME_OK);
@@ -670,10 +960,26 @@ TME_ELEMENT_SUB_NEW_DECL(tme_host_udp,eth) {
   int rc;
 
   /* get the arguments: */
-  rc = _tme_udp_args(args, &listen_arg, peer_args, &peers_count, _output);
+  udp = tme_new0(struct tme_udp, 1);
+  rc = _tme_udp_args(args, &listen_arg, peer_args, &peers_count, udp, _output);
   if (rc != TME_OK) {
+    tme_free(udp);
     return (rc);
   }
+  if (udp->tme_udp_l2tp) {
+    udp->tme_udp_l2tp_header_len = (8
+				    + udp->tme_udp_l2tp_cookie_len
+				    + (udp->tme_udp_l2tp_counter ? 4 : 0));
+  }
+
+  /* keepalives come from the emulated interface's address once it
+     tells us; until then from a locally administered one: */
+  udp->tme_udp_keepalive_addr[0] = 0x02;
+  udp->tme_udp_keepalive_addr[1] = 0x74;	/* 't' */
+  udp->tme_udp_keepalive_addr[2] = getpid() >> 8;
+  udp->tme_udp_keepalive_addr[3] = getpid();
+  udp->tme_udp_keepalive_addr[4] = time(NULL) >> 8;
+  udp->tme_udp_keepalive_addr[5] = time(NULL);
 
   /* resolve the listen address.  without one, we listen on an
      ephemeral port on the loopback address, which only works with
@@ -682,7 +988,6 @@ TME_ELEMENT_SUB_NEW_DECL(tme_host_udp,eth) {
     listen_arg.tme_udp_addr_arg_host = tme_strdup("127.0.0.1");
     listen_arg.tme_udp_addr_arg_port = tme_strdup("0");
   }
-  udp = tme_new0(struct tme_udp, 1);
   udp->tme_udp_element = element;
   rc = _tme_udp_resolve(&listen_arg, AF_UNSPEC, TRUE,
 			&listen_addr, &listen_addr_len, _output);
@@ -741,7 +1046,16 @@ TME_ELEMENT_SUB_NEW_DECL(tme_host_udp,eth) {
 	   _("exchanging frames on UDP %s"),
 	   _tme_udp_sockaddr_string(&listen_addr, listen_addr_len,
 				    addr_buf, sizeof(addr_buf))));
-  if (!_tme_udp_sockaddr_loopback(&listen_addr)) {
+  if (udp->tme_udp_l2tp) {
+    tme_log(&element->tme_element_log_handle, 0, TME_OK,
+	    (&element->tme_element_log_handle,
+	     _("L2TPv3 session %lu, %u byte cookie, %s"),
+	     (unsigned long) udp->tme_udp_l2tp_session,
+	     udp->tme_udp_l2tp_cookie_len,
+	     (udp->tme_udp_l2tp_counter ? _("counter") : _("no counter"))));
+  }
+  if (!_tme_udp_sockaddr_loopback(&listen_addr)
+      && (!udp->tme_udp_l2tp || udp->tme_udp_l2tp_cookie_len == 0)) {
     tme_log(&element->tme_element_log_handle, 0, TME_OK,
 	    (&element->tme_element_log_handle,
 	     _("warning: anyone who can reach %s can send and receive frames"),
