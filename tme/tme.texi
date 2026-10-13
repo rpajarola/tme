@@ -493,6 +493,22 @@ TME supports version 3 of GTK+. You can create a frontend with a GTK
 interface by invoking the appropriate line in the configuration file.
 See examples in the machines directory for details.
 
+The Screen menu can save a screenshot of the emulated display as a
+PNG file, and record it as an MP4 file, at the emulated framebuffer's
+own resolution. Files are named after the date and time, like
+@file{tme-20261013-154500.png}, and saved in the current directory.
+Recording needs @command{ffmpeg} on the @env{PATH}, and records at 10
+frames per second.
+
+The same can be done from the tmesh prompt, with an optional file
+name:
+
+@example
+command display0 screenshot [ @var{file}.png ]
+command display0 record [ @var{file}.mp4 ]
+command display0 record stop
+@end example
+
 @node VNC
 @subsection VNC
 TME supports the VNC protocol for displaying a framebuffer remotely.

@@ -39,6 +39,14 @@ _TME_RCSID("$Id: gtk-screen.c,v 1.11 2009/08/30 21:39:03 fredette Exp $");
 /* includes: */
 #include "gtk-display.h"
 #include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <errno.h>
+#include <signal.h>
+#include <time.h>
+#include <unistd.h>
+
+static void _tme_gtk_screen_record_tick _TME_P((struct tme_gtk_screen *));
 
 static void
 _tme_gtk_display_bell(struct tme_gdk_display *display) {
@@ -57,6 +65,9 @@ _tme_gtk_display_update(struct tme_display *display) {
        screen != NULL;
        screen = screen->tme_screen_next) {
     _tme_gtk_media_update((struct tme_gtk_screen *) screen);
+
+    /* if the screen is being recorded, send any frames that are due: */
+    _tme_gtk_screen_record_tick((struct tme_gtk_screen *) screen);
   }
   return TME_OK;
 }
@@ -408,6 +419,354 @@ _tme_gtk_screen_configure(GtkWidget         *widget,
   return TRUE;
 }
 
+/* this removes a screen capture message from the status bar: */
+static gboolean
+_tme_gtk_screen_message_pop(gpointer _screen)
+{
+  struct tme_gtk_screen *screen;
+
+  screen = (struct tme_gtk_screen *) _screen;
+  gtk_statusbar_pop(GTK_STATUSBAR(screen->tme_gtk_screen_mouse_statusbar),
+		    screen->tme_gtk_screen_capture_cid);
+  return (G_SOURCE_REMOVE);
+}
+
+/* this shows a screen capture message in the status bar for a few
+   seconds: */
+static void
+_tme_gtk_screen_message(struct tme_gtk_screen *screen, const char *message)
+{
+  if (screen->tme_gtk_screen_mouse_statusbar == NULL) {
+    return;
+  }
+  gtk_statusbar_push(GTK_STATUSBAR(screen->tme_gtk_screen_mouse_statusbar),
+		     screen->tme_gtk_screen_capture_cid,
+		     message);
+  g_timeout_add_seconds(5, _tme_gtk_screen_message_pop, screen);
+}
+
+/* this returns a new image of the screen, at the size of the
+   emulated framebuffer, or NULL if there is no screen yet: */
+static cairo_surface_t *
+_tme_gtk_screen_capture(struct tme_gtk_screen *screen)
+{
+  cairo_surface_t *source;
+  cairo_surface_t *image;
+  const struct tme_fb_connection *conn_fb_other;
+  double device_scale_x, device_scale_y;
+  double width_logical, height_logical;
+  int width, height;
+  cairo_t *cr;
+
+  /* get the screen surface: */
+  source = screen->tme_gtk_screen_surface;
+  if (source == NULL
+      || cairo_surface_get_type(source) != CAIRO_SURFACE_TYPE_IMAGE) {
+    return (NULL);
+  }
+  cairo_surface_flush(source);
+  cairo_surface_get_device_scale(source, &device_scale_x, &device_scale_y);
+  width_logical = cairo_image_surface_get_width(source) / device_scale_x;
+  height_logical = cairo_image_surface_get_height(source) / device_scale_y;
+
+  /* the image is the size of the emulated framebuffer, which the
+     screen surface may be scaled from: */
+  conn_fb_other
+    = (screen->screen.tme_screen_fb != NULL
+       ? ((const struct tme_fb_connection *)
+	  screen->screen.tme_screen_fb->tme_fb_connection.tme_connection_other)
+       : NULL);
+  if (conn_fb_other != NULL
+      && conn_fb_other->tme_fb_connection_width > 0
+      && conn_fb_other->tme_fb_connection_height > 0) {
+    width = conn_fb_other->tme_fb_connection_width;
+    height = conn_fb_other->tme_fb_connection_height;
+  }
+  else {
+    width = width_logical;
+    height = height_logical;
+  }
+
+  /* draw the screen surface into the image, without smoothing: */
+  image = cairo_image_surface_create(CAIRO_FORMAT_RGB24, width, height);
+  cr = cairo_create(image);
+  cairo_scale(cr, width / width_logical, height / height_logical);
+  cairo_set_source_surface(cr, source, 0, 0);
+  cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_NEAREST);
+  cairo_paint(cr);
+  cairo_destroy(cr);
+  cairo_surface_flush(image);
+  return (image);
+}
+
+/* this returns a new file name for a screen capture, in the current
+   directory, from the date and time: */
+static char *
+_tme_gtk_screen_capture_name(const char *extension)
+{
+  char name[64];
+  char stamp[32];
+  time_t now;
+  unsigned int suffix;
+
+  now = time(NULL);
+  strftime(stamp, sizeof(stamp), "%Y%m%d-%H%M%S", localtime(&now));
+  snprintf(name, sizeof(name), "tme-%s.%s", stamp, extension);
+  for (suffix = 2; access(name, F_OK) == 0; suffix++) {
+    snprintf(name, sizeof(name), "tme-%s-%u.%s", stamp, suffix, extension);
+  }
+  return (tme_strdup(name));
+}
+
+/* this saves a screenshot as a PNG file, returning an errno value: */
+static int
+_tme_gtk_screen_screenshot(struct tme_gtk_screen *screen,
+			   const char *file,
+			   char **_output)
+{
+  cairo_surface_t *image;
+  cairo_status_t status;
+  char *name;
+  char message[256];
+
+  image = _tme_gtk_screen_capture(screen);
+  if (image == NULL) {
+    tme_output_append_error(_output, _("there is no screen to capture yet"));
+    return (EAGAIN);
+  }
+  name = (file != NULL ? tme_strdup(file) : _tme_gtk_screen_capture_name("png"));
+  status = cairo_surface_write_to_png(image, name);
+  cairo_surface_destroy(image);
+  if (status != CAIRO_STATUS_SUCCESS) {
+    tme_output_append_error(_output, "%s: %s", name, cairo_status_to_string(status));
+    tme_free(name);
+    return (EIO);
+  }
+  snprintf(message, sizeof(message), _("Saved screenshot %s"), name);
+  _tme_gtk_screen_message(screen, message);
+  tme_output_append(_output, "%s", name);
+  tme_free(name);
+  return (TME_OK);
+}
+
+/* recordings have this many frames per second: */
+#define TME_GTK_RECORD_FPS	(10)
+
+/* this sends the current screen to ffmpeg as however many frames of
+   a recording are due by now, so the recording plays back in real
+   time, and stops the recording if that fails: */
+static void _tme_gtk_screen_record_stop _TME_P((struct tme_gtk_screen *, char **));
+static void
+_tme_gtk_screen_record_tick(struct tme_gtk_screen *screen)
+{
+  cairo_surface_t *image;
+  unsigned long frames_due, count;
+  int ok;
+
+  if (screen->tme_gtk_screen_record == NULL) {
+    return;
+  }
+
+  /* see how many frames are due.  after a long stall, like the host
+     sleeping, skip most of the frames that were missed: */
+  frames_due
+    = (((g_get_monotonic_time() - screen->tme_gtk_screen_record_start)
+	* TME_GTK_RECORD_FPS
+	/ G_USEC_PER_SEC)
+       + 1);
+  if (frames_due <= screen->tme_gtk_screen_record_frames) {
+    return;
+  }
+  count = TME_MIN(frames_due - screen->tme_gtk_screen_record_frames,
+		  5 * TME_GTK_RECORD_FPS);
+  screen->tme_gtk_screen_record_frames = frames_due;
+
+  /* send the frames: */
+  image = _tme_gtk_screen_capture(screen);
+  ok = (image != NULL
+	&& cairo_image_surface_get_width(image) == screen->tme_gtk_screen_record_width
+	&& cairo_image_surface_get_height(image) == screen->tme_gtk_screen_record_height
+	&& cairo_image_surface_get_stride(image) == screen->tme_gtk_screen_record_width * 4);
+  for (; ok && count > 0; count--) {
+    ok = (fwrite(cairo_image_surface_get_data(image),
+		 cairo_image_surface_get_stride(image),
+		 screen->tme_gtk_screen_record_height,
+		 screen->tme_gtk_screen_record)
+	  == (size_t) screen->tme_gtk_screen_record_height);
+  }
+  ok = ok && fflush(screen->tme_gtk_screen_record) == 0;
+  if (image != NULL) {
+    cairo_surface_destroy(image);
+  }
+  if (!ok) {
+    _tme_gtk_screen_record_stop(screen, NULL);
+    _tme_gtk_screen_message(screen, _("Recording stopped: the screen changed size, or ffmpeg failed"));
+  }
+}
+
+/* this starts recording the screen into an MP4 file with ffmpeg,
+   returning an errno value: */
+static int
+_tme_gtk_screen_record_start(struct tme_gtk_screen *screen,
+			     const char *file,
+			     char **_output)
+{
+  cairo_surface_t *image;
+  char *name;
+  char *command;
+  char message[256];
+
+  if (screen->tme_gtk_screen_record != NULL) {
+    tme_output_append_error(_output, _("already recording %s"), screen->tme_gtk_screen_record_file);
+    return (EBUSY);
+  }
+  if (system("command -v ffmpeg >/dev/null 2>&1") != 0) {
+    tme_output_append_error(_output, _("recording needs ffmpeg, which wasn't found"));
+    _tme_gtk_screen_message(screen, _("Recording needs ffmpeg, which wasn't found"));
+    return (ENOENT);
+  }
+  image = _tme_gtk_screen_capture(screen);
+  if (image == NULL) {
+    tme_output_append_error(_output, _("there is no screen to capture yet"));
+    return (EAGAIN);
+  }
+  name = (file != NULL ? tme_strdup(file) : _tme_gtk_screen_capture_name("mp4"));
+  if (strchr(name, '\'') != NULL) {
+    tme_output_append_error(_output, _("%s: file names with quotes are not supported"), name);
+    cairo_surface_destroy(image);
+    tme_free(name);
+    return (EINVAL);
+  }
+
+  /* start ffmpeg.  an odd frame size is padded to an even one, which
+     the H.264 encoder needs: */
+  screen->tme_gtk_screen_record_width = cairo_image_surface_get_width(image);
+  screen->tme_gtk_screen_record_height = cairo_image_surface_get_height(image);
+  cairo_surface_destroy(image);
+  command = tme_new(char, strlen(name) + 512);
+  sprintf(command,
+	  "ffmpeg -loglevel error -y"
+	  " -f rawvideo -pixel_format bgr0 -video_size %dx%d -framerate %d -i -"
+	  " -vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2'"
+	  " -c:v libx264 -preset veryfast -crf 18 -pix_fmt yuv420p"
+	  " '%s'",
+	  screen->tme_gtk_screen_record_width,
+	  screen->tme_gtk_screen_record_height,
+	  TME_GTK_RECORD_FPS,
+	  name);
+  signal(SIGPIPE, SIG_IGN);
+  screen->tme_gtk_screen_record = popen(command, "w");
+  tme_free(command);
+  if (screen->tme_gtk_screen_record == NULL) {
+    tme_output_append_error(_output, _("couldn't start ffmpeg: %s"), strerror(errno));
+    tme_free(name);
+    return (errno);
+  }
+  screen->tme_gtk_screen_record_file = name;
+
+  /* send the first frame now: */
+  screen->tme_gtk_screen_record_start = g_get_monotonic_time();
+  screen->tme_gtk_screen_record_frames = 0;
+  _tme_gtk_screen_record_tick(screen);
+  if (screen->tme_gtk_screen_record == NULL) {
+    tme_output_append_error(_output, _("ffmpeg failed"));
+    return (EIO);
+  }
+
+  snprintf(message, sizeof(message), _("Recording to %s"), name);
+  _tme_gtk_screen_message(screen, message);
+  tme_output_append(_output, "%s", name);
+  if (screen->tme_gtk_screen_record_item != NULL) {
+    gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(screen->tme_gtk_screen_record_item), TRUE);
+  }
+  return (TME_OK);
+}
+
+/* this stops recording the screen: */
+static void
+_tme_gtk_screen_record_stop(struct tme_gtk_screen *screen, char **_output)
+{
+  FILE *record;
+  char message[256];
+  int status;
+
+  record = screen->tme_gtk_screen_record;
+  if (record == NULL) {
+    return;
+  }
+
+  /* send any frames due by now, and wait for ffmpeg to finish the
+     file: */
+  _tme_gtk_screen_record_tick(screen);
+  record = screen->tme_gtk_screen_record;
+  screen->tme_gtk_screen_record = NULL;
+  status = (record != NULL ? pclose(record) : -1);
+  if (status == 0) {
+    snprintf(message, sizeof(message), _("Saved recording %s"), screen->tme_gtk_screen_record_file);
+    if (_output != NULL) {
+      tme_output_append(_output, "%s", screen->tme_gtk_screen_record_file);
+    }
+  }
+  else {
+    snprintf(message, sizeof(message), _("Recording %s failed"), screen->tme_gtk_screen_record_file);
+  }
+  _tme_gtk_screen_message(screen, message);
+  tme_free(screen->tme_gtk_screen_record_file);
+  screen->tme_gtk_screen_record_file = NULL;
+  if (screen->tme_gtk_screen_record_item != NULL) {
+    gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(screen->tme_gtk_screen_record_item), FALSE);
+  }
+}
+
+/* the Save Screenshot menu item: */
+static void
+_tme_gtk_screen_screenshot_item(GtkWidget *menu_item, struct tme_gtk_screen *screen)
+{
+  struct tme_display *display;
+  char *output;
+
+  display = screen->screen.tme_screen_display;
+  output = NULL;
+  tme_mutex_lock(&display->tme_display_mutex);
+  if (_tme_gtk_screen_screenshot(screen, NULL, &output) != TME_OK
+      && output != NULL) {
+    _tme_gtk_screen_message(screen, output);
+  }
+  tme_mutex_unlock(&display->tme_display_mutex);
+  if (output != NULL) {
+    tme_free(output);
+  }
+}
+
+/* the Record menu item: */
+static void
+_tme_gtk_screen_record_item(GtkWidget *menu_item, struct tme_gtk_screen *screen)
+{
+  struct tme_display *display;
+  char *output;
+  int active;
+
+  display = screen->screen.tme_screen_display;
+  active = gtk_check_menu_item_get_active(GTK_CHECK_MENU_ITEM(menu_item));
+  output = NULL;
+  tme_mutex_lock(&display->tme_display_mutex);
+
+  /* this item is also set when a command starts or stops a recording,
+     so only act if the state really changed: */
+  if (active && screen->tme_gtk_screen_record == NULL) {
+    if (_tme_gtk_screen_record_start(screen, NULL, &output) != TME_OK) {
+      gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(menu_item), FALSE);
+    }
+  }
+  else if (!active && screen->tme_gtk_screen_record != NULL) {
+    _tme_gtk_screen_record_stop(screen, &output);
+  }
+  tme_mutex_unlock(&display->tme_display_mutex);
+  if (output != NULL) {
+    tme_free(output);
+  }
+}
+
 /* this is called before the screen's display is updated: */
 static void
 _tme_gtk_screen_redraw(struct tme_gtk_screen *screen, int x, int y, int w, int h)
@@ -415,6 +774,68 @@ _tme_gtk_screen_redraw(struct tme_gtk_screen *screen, int x, int y, int w, int h
   cairo_surface_flush(screen->tme_gtk_screen_surface);
   cairo_surface_mark_dirty(screen->tme_gtk_screen_surface);
   gtk_widget_queue_draw(screen->tme_gtk_screen_gtkframe);
+}
+
+/* the GTK display command function: */
+static int
+_tme_gtk_display_command(struct tme_element *element, const char * const *args, char **_output)
+{
+  struct tme_display *display;
+  struct tme_gtk_screen *screen;
+  int rc;
+
+  display = (struct tme_display *) element->tme_element_private;
+  screen = (struct tme_gtk_screen *) display->tme_display_screens;
+
+  /* screenshot [ FILE ]: */
+  if (TME_ARG_IS(args[1], "screenshot")
+      && (args[2] == NULL || args[3] == NULL)) {
+    if (screen == NULL) {
+      tme_output_append_error(_output, _("there is no screen"));
+      return (ENOENT);
+    }
+    tme_mutex_lock(&display->tme_display_mutex);
+    rc = _tme_gtk_screen_screenshot(screen, args[2], _output);
+    tme_mutex_unlock(&display->tme_display_mutex);
+    return (rc);
+  }
+
+  /* record [ FILE | stop ]: */
+  if (TME_ARG_IS(args[1], "record")
+      && (args[2] == NULL || args[3] == NULL)) {
+    if (screen == NULL) {
+      tme_output_append_error(_output, _("there is no screen"));
+      return (ENOENT);
+    }
+    tme_mutex_lock(&display->tme_display_mutex);
+    if (TME_ARG_IS(args[2], "stop")) {
+      if (screen->tme_gtk_screen_record == NULL) {
+	tme_output_append_error(_output, _("not recording"));
+	rc = ENOENT;
+      }
+      else {
+	_tme_gtk_screen_record_stop(screen, _output);
+	rc = TME_OK;
+      }
+    }
+    else {
+      rc = _tme_gtk_screen_record_start(screen, args[2], _output);
+    }
+    tme_mutex_unlock(&display->tme_display_mutex);
+    return (rc);
+  }
+
+  if (args[1] == NULL) {
+    tme_output_append_error(_output, _("missing command"));
+  }
+  else {
+    tme_output_append_error(_output, "%s '%s', ", _("unknown command"), args[1]);
+  }
+  tme_output_append_error(_output,
+			  _("available %s commands: %s"),
+			  args[0],
+			  "screenshot [ FILE ], record [ FILE | stop ]");
+  return (EINVAL);
 }
 
 /* Redraw the screen from the surface. Note that the ::draw
@@ -510,6 +931,18 @@ _tme_gtk_screen_new(struct tme_gdk_display *display,
   gtk_menu_item_set_submenu(GTK_MENU_ITEM(menu_item), submenu);
   gtk_menu_shell_append(GTK_MENU_SHELL(menu), menu_item);
 
+  /* create the screen capture items: */
+  gtk_menu_shell_append(GTK_MENU_SHELL(menu), gtk_separator_menu_item_new());
+  menu_item = gtk_menu_item_new_with_label(_("Save Screenshot"));
+  g_signal_connect(menu_item, "activate",
+		   G_CALLBACK(_tme_gtk_screen_screenshot_item), screen);
+  gtk_menu_shell_append(GTK_MENU_SHELL(menu), menu_item);
+  menu_item = gtk_check_menu_item_new_with_label(_("Record"));
+  g_signal_connect(menu_item, "toggled",
+		   G_CALLBACK(_tme_gtk_screen_record_item), screen);
+  gtk_menu_shell_append(GTK_MENU_SHELL(menu), menu_item);
+  screen->tme_gtk_screen_record_item = menu_item;
+
   /* create the Quit item, with Cmd-Q (Ctrl-Q other than on macOS): */
   gtk_menu_shell_append(GTK_MENU_SHELL(menu), gtk_separator_menu_item_new());
   accel_group = gtk_accel_group_new();
@@ -559,6 +992,11 @@ _tme_gtk_screen_new(struct tme_gdk_display *display,
 
   /* attach the mouse to this screen: */
   _tme_gtk_mouse_attach(screen);
+
+  /* screen capture messages go in the mouse status bar: */
+  screen->tme_gtk_screen_capture_cid
+    = gtk_statusbar_get_context_id(GTK_STATUSBAR(screen->tme_gtk_screen_mouse_statusbar),
+				   "screen capture");
 
   /* attach the keyboard to this screen: */
   _tme_gtk_keyboard_attach(screen);
@@ -685,6 +1123,9 @@ TME_ELEMENT_SUB_NEW_DECL(tme_host_gtk,display) {
   display->display.tme_screen_add = _tme_gtk_screen_new;
   display->display.tme_screen_resize = _tme_gtk_screen_resize;
   display->display.tme_screen_redraw = _tme_gtk_screen_redraw;
+
+  /* the screen capture commands: */
+  element->tme_element_command = _tme_gtk_display_command;
 
   /* setup the thread loop function: */
   //tme_threads_init(NULL, gtk_main);
