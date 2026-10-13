@@ -109,6 +109,24 @@ tme_scsi_tape_address_lun_aware(struct tme_scsi_device *scsi_device)
 	   || (scsi_device->tme_scsi_device_cdb[0]
 	       == TME_SCSI_CDB_REQUEST_SENSE)) {
     sense = NULL;
+
+    /* a REQUEST SENSE reports, and clears, any attention condition.
+       the SunOS 2.0 tape driver only does a REQUEST SENSE when a
+       tape is opened, so otherwise the attention condition failed
+       the first real command, like a REWIND: */
+    if ((scsi_device->tme_scsi_device_cdb[0]
+	 == TME_SCSI_CDB_REQUEST_SENSE)
+	&& (conn_scsi_tape->tme_scsi_tape_connection_flags
+	    & TME_SCSI_TAPE_FLAG_ATTENTION)) {
+      conn_scsi_tape->tme_scsi_tape_connection_flags
+	&= ~TME_SCSI_TAPE_FLAG_ATTENTION;
+      memset(scsi_device->tme_scsi_device_sense[lun].tme_scsi_device_sense_data,
+	     0,
+	     sizeof(scsi_device->tme_scsi_device_sense[lun].tme_scsi_device_sense_data));
+      scsi_device->tme_scsi_device_sense[lun].tme_scsi_device_sense_data[0] = 0x70;
+      scsi_device->tme_scsi_device_sense[lun].tme_scsi_device_sense_data[2] = 0x06;
+      scsi_device->tme_scsi_device_sense[lun].tme_scsi_device_sense_valid = TRUE;
+    }
   }
 
   /* otherwise, if the tape at this LUN has an attention condition: */
