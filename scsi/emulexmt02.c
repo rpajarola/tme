@@ -61,6 +61,19 @@ static _TME_SCSI_DEVICE_CDB_DECL(_tme_emulexmt02_cdb_request_sense)
   
   /* get the sense: */
   sense = &scsi_device->tme_scsi_device_sense[lun];
+
+  /* if there is no sense, make a NO SENSE extended sense.  the
+     normal REQUEST SENSE handler would otherwise make one with no
+     additional sense bytes, but the Emulex MT-02 always returns its
+     additional bytes, and the SunOS 2.0 tape driver fails a REQUEST
+     SENSE that returns fewer bytes than it asked for: */
+  if (!sense->tme_scsi_device_sense_valid) {
+    memset(sense->tme_scsi_device_sense_data,
+	   0,
+	   sizeof(sense->tme_scsi_device_sense_data));
+    sense->tme_scsi_device_sense_data[0] = 0x70;
+    sense->tme_scsi_device_sense_valid = TRUE;
+  }
   
   /* see how much space for sense bytes the initiator
      has allocated.  zero means four: */
