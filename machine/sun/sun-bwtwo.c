@@ -91,6 +91,11 @@ struct tme_sunbw2 {
 
   /* our csr: */
   tme_uint16_t tme_sunbw2_csr;
+
+  /* in copy mode, the contents of the main memory region when it
+     was last checked, and the CSR they are for: */
+  tme_uint8_t *tme_sunbw2_copy_shadow;
+  tme_uint16_t tme_sunbw2_copy_csr;
 };
 
 #ifdef TME_SUNBW2_DEBUG
@@ -236,9 +241,11 @@ _tme_sunbw2_int_get(struct tme_sunfb *sunfb)
 /* in copy mode, writes to a 128KB region of main memory, selected by
    the copybase bits in the CSR, are also written to the framebuffer
    memory, so that software can draw in (faster) main memory.  we
-   emulate this by copying that region into the framebuffer memory
-   before each display update.  this must be called with the mutex
-   locked: */
+   emulate this before each display update by copying the bytes of
+   that region that have changed since the last update into the
+   framebuffer memory, so writes made directly to the framebuffer
+   memory stay until the same bytes are written in main memory.  this
+   must be called with the mutex locked: */
 static void
 _tme_sunbw2_copy(struct tme_sunbw2 *sunbw2, tme_uint16_t csr)
 {
@@ -247,7 +254,10 @@ _tme_sunbw2_copy(struct tme_sunbw2 *sunbw2, tme_uint16_t csr)
   struct tme_bus_tlb tlb;
   struct tme_token token;
   tme_bus_addr32_t copybase;
-  tme_uint32_t size, offset, count;
+  tme_uint32_t size, offset, count, byte_i;
+  const tme_uint8_t *memory;
+  tme_uint8_t *shadow;
+  int start;
 
   sunfb = &sunbw2->tme_sunbw2_sunfb;
 
@@ -262,7 +272,21 @@ _tme_sunbw2_copy(struct tme_sunbw2 *sunbw2, tme_uint16_t csr)
 					    sunfb->tme_sunfb_device.tme_bus_device_connection,
 					    &sunfb->tme_sunfb_device.tme_bus_device_connection_rwlock);
 
-  /* copy the region, as far as it can be read quickly: */
+  /* if copy mode has just been enabled, or the region has changed,
+     only take a snapshot of the region now, since nothing has been
+     written to it yet: */
+  if (sunbw2->tme_sunbw2_copy_shadow == NULL) {
+    sunbw2->tme_sunbw2_copy_shadow = tme_new(tme_uint8_t, size);
+    sunbw2->tme_sunbw2_copy_csr = 0;
+  }
+  shadow = sunbw2->tme_sunbw2_copy_shadow;
+  start = (((sunbw2->tme_sunbw2_copy_csr ^ csr)
+	    & (TME_SUNBW2_CSR_ENABLE_COPY | TME_SUNBW2_CSR_COPYBASE_MASK))
+	   != 0);
+  sunbw2->tme_sunbw2_copy_csr = csr;
+
+  /* copy the changed bytes in the region, as far as it can be read
+     quickly: */
   tme_token_init(&token);
   for (offset = 0; offset < size; offset += count) {
     tlb.tme_bus_tlb_token = &token;
@@ -273,9 +297,17 @@ _tme_sunbw2_copy(struct tme_sunbw2 *sunbw2, tme_uint16_t csr)
       break;
     }
     count = TME_MIN(size - offset, (tlb.tme_bus_tlb_addr_last - (copybase + offset)) + 1);
-    memcpy(sunfb->tme_sunfb_memory + offset,
-	   (const tme_uint8_t *) (tlb.tme_bus_tlb_emulator_off_read + copybase + offset),
-	   count);
+    memory = (const tme_uint8_t *) (tlb.tme_bus_tlb_emulator_off_read + copybase + offset);
+    if (start) {
+      memcpy(shadow + offset, memory, count);
+      continue;
+    }
+    for (byte_i = 0; byte_i < count; byte_i++) {
+      if (memory[byte_i] != shadow[offset + byte_i]) {
+	shadow[offset + byte_i] = memory[byte_i];
+	sunfb->tme_sunfb_memory[offset + byte_i] = memory[byte_i];
+      }
+    }
   }
 }
 
@@ -297,6 +329,9 @@ _tme_sunbw2_memory_update(struct tme_fb_connection *conn_fb)
   csr = tme_betoh_u16(sunbw2->tme_sunbw2_csr);
   if (csr & TME_SUNBW2_CSR_ENABLE_COPY) {
     _tme_sunbw2_copy(sunbw2, csr);
+  }
+  else {
+    sunbw2->tme_sunbw2_copy_csr = csr;
   }
 
   /* if the interrupt is enabled, it becomes active, and stays active
