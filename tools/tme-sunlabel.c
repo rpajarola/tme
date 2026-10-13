@@ -38,6 +38,11 @@
    wrap around onto the start of the disk, so by default the plan is
    limited to 1GB; -4 lifts the limit, for SunOS 4.
 
+   SunOS 2.0 can only use the first 512MB of a SCSI disk.  some of
+   its I/O, like paging programs in from their files, only uses a
+   20-bit block number, so blocks past 512MB are read from 512MB
+   lower down.  a plan for a bigger disk gets a warning.
+
    IMAGE is only needed to write the label, or to plan a label for
    the size of an existing image: */
 
@@ -376,6 +381,14 @@ main(int argc, char **argv)
 	    "    use -s 1G, or -4 if this disk is for SunOS 4\n",
 	    prog, size_string((unsigned long long) (ncyl + acyl) * cyl_blocks));
     return (1);
+  }
+
+  /* the SunOS 2.0 limit: */
+  if (!sunos4 && (unsigned long long) ncyl * cyl_blocks > 512 * 2048) {
+    fprintf(stderr,
+	    "%s: warning: a %s disk is too big for SunOS 2.0, which can only use 512MB\n"
+	    "    of a SCSI disk; use -s 512M if this disk is for SunOS 2.0\n",
+	    prog, size_string((unsigned long long) ncyl * cyl_blocks));
   }
 
   /* the default partitions: */
