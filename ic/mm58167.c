@@ -86,6 +86,11 @@ struct tme_mm58167 {
 
   /* the status register: */
   tme_uint8_t tme_mm58167_status;
+
+  /* the register last accessed, and the thousandths of seconds
+     digit last read: */
+  unsigned int tme_mm58167_reg_last;
+  tme_uint8_t tme_mm58167_msec_last;
 };
 
 /* the mm58167 bus router: */
@@ -120,7 +125,8 @@ _tme_mm58167_bus_cycle(void *_mm58167, struct tme_bus_cycle *cycle_init)
   /* get the register being accessed: */
   address = cycle_init->tme_bus_cycle_address;
   reg = address >> mm58167->tme_mm58167_addr_shift;
-  reg_is_bcd = (reg <= TME_MM58167_REG_MON);
+  reg_is_bcd = (reg > TME_MM58167_REG_MSEC_XXX
+		&& reg <= TME_MM58167_REG_MON);
 
   /* lock the mutex: */
   tme_mutex_lock(&mm58167->tme_mm58167_mutex);
@@ -187,7 +193,25 @@ _tme_mm58167_bus_cycle(void *_mm58167, struct tme_bus_cycle *cycle_init)
     /* dispatch on the register: */
     switch (reg) {
     case TME_MM58167_REG_MSEC_XXX:
-      value = TME_TIME_GET_MSEC(now % TME_FRAC_PER_SEC);
+
+      /* this register has the thousandths of seconds digit in its
+	 most significant nibble, and its least significant nibble
+	 (the ten-thousandths of seconds) always reads as zero: */
+      value = TME_TIME_GET_MSEC(now % TME_FRAC_PER_SEC) % 10;
+
+      /* software probes for a running clock by reading this
+	 register before and after a short delay loop, which can run
+	 in much less than a millisecond in the emulator.  if this
+	 register is read twice in a row, without any other register
+	 being accessed in between, never return the same digit.
+	 software that reads all of the registers twice to get a
+	 consistent time still sees the same digit both times: */
+      if (mm58167->tme_mm58167_reg_last == TME_MM58167_REG_MSEC_XXX
+	  && value == mm58167->tme_mm58167_msec_last) {
+	value = (value + 1) % 10;
+      }
+      mm58167->tme_mm58167_msec_last = value;
+      value <<= 4;
       break;
     case TME_MM58167_REG_CSEC:
       value = TME_TIME_GET_MSEC(now % TME_FRAC_PER_SEC) / 10;
@@ -243,6 +267,9 @@ _tme_mm58167_bus_cycle(void *_mm58167, struct tme_bus_cycle *cycle_init)
     tme_bus_cycle_xfer(cycle_init, &cycle_resp);
   }
     
+  /* remember the register last accessed: */
+  mm58167->tme_mm58167_reg_last = reg;
+
   /* unlock the mutex: */
   tme_mutex_unlock(&mm58167->tme_mm58167_mutex);
 
