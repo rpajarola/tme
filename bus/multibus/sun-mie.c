@@ -532,6 +532,7 @@ _tme_sun_mie_bus_signal(struct tme_bus_connection *conn_bus,
 			unsigned int signal)
 {
   struct tme_sun_mie *sun_mie;
+  tme_uint16_t csr;
 
   /* return now if this is not a generic bus signal: */
   if (TME_BUS_SIGNAL_INDEX(signal)
@@ -542,10 +543,33 @@ _tme_sun_mie_bus_signal(struct tme_bus_connection *conn_bus,
   /* recover our data structures: */
   sun_mie = conn_bus->tme_bus_connection.tme_connection_element->tme_element_private;
 
-  /* since this function is currently only given to the i825x6,
-     just copy its signal through to the Multibus: */
-  conn_bus = sun_mie->tme_sun_mie_conn_regs;
-  return ((*conn_bus->tme_bus_signal)(conn_bus, signal));
+  /* this function is only given to the i825x6, so this must be its
+     interrupt signal: */
+  assert (TME_BUS_SIGNAL_WHICH(signal) == TME_BUS_SIGNAL_INT_UNSPEC);
+
+  /* lock the mutex: */
+  tme_mutex_lock(&sun_mie->tme_sun_mie_mutex);
+
+  /* the i825x6 interrupt sets the interrupt bit in the CSR, and the
+     Multibus interrupt is asserted only if interrupts are also
+     enabled.  software checks the interrupt bit to see if an
+     interrupt is ours: */
+  csr = TME_SUN_MIE_CSR_GET(sun_mie);
+  csr = ((csr
+	  & ~TME_SUN_MIE_CSR_INTR)
+	 | (((signal & TME_BUS_SIGNAL_LEVEL_MASK)
+	     == TME_BUS_SIGNAL_LEVEL_ASSERTED)
+	    ? TME_SUN_MIE_CSR_INTR
+	    : 0));
+  TME_SUN_MIE_CSR_PUT(sun_mie, csr);
+
+  /* possibly call out an interrupt change to the Multibus: */
+  _tme_sun_mie_callout(sun_mie, TME_SUN_MIE_CALLOUT_INT);
+
+  /* unlock the mutex: */
+  tme_mutex_unlock(&sun_mie->tme_sun_mie_mutex);
+
+  return (TME_OK);
 }
 
 /* the sun_mie bus signals adder for the i825x6: */
