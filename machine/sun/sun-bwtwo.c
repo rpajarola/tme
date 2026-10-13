@@ -226,6 +226,45 @@ _tme_sunbw2_bus_cycle_csr(void *_sunbw2, struct tme_bus_cycle *cycle_init)
   return (TME_OK);
 }
 
+/* the bus signal handler.  a reset clears copy mode and the
+   interrupt, which a reboot relies on: SunOS uses the main memory
+   region as ordinary memory if it finds copy mode already enabled: */
+static int
+_tme_sunbw2_bus_signal(void *_sunbw2, unsigned int signal)
+{
+  struct tme_sunbw2 *sunbw2;
+  tme_uint16_t csr;
+
+  /* recover our data structure: */
+  sunbw2 = (struct tme_sunbw2 *) _sunbw2;
+
+  /* on the negating edge of a reset: */
+  if (TME_BUS_SIGNAL_WHICH(signal) == TME_BUS_SIGNAL_RESET
+      && (signal & TME_BUS_SIGNAL_LEVEL_MASK) == TME_BUS_SIGNAL_LEVEL_NEGATED) {
+
+    /* lock the mutex: */
+    tme_mutex_lock(&sunbw2->tme_sunbw2_mutex);
+
+    /* clear copy mode and the interrupt: */
+    csr = tme_betoh_u16(sunbw2->tme_sunbw2_csr);
+    csr &= ~(TME_SUNBW2_CSR_ENABLE_COPY
+	     | TME_SUNBW2_CSR_ENABLE_INT
+	     | TME_SUNBW2_CSR_INT_ACTIVE
+	     | TME_SUNBW2_CSR_COPYBASE_MASK);
+    sunbw2->tme_sunbw2_csr = tme_htobe_u16(csr);
+
+    /* if the interrupt signal should change, wake the callout thread: */
+    if (sunbw2->tme_sunbw2_sunfb.tme_sunfb_int_asserted) {
+      tme_cond_notify(&sunbw2->tme_sunbw2_sunfb.tme_sunfb_callout_cond, FALSE);
+    }
+
+    /* unlock the mutex: */
+    tme_mutex_unlock(&sunbw2->tme_sunbw2_mutex);
+  }
+
+  return (TME_OK);
+}
+
 /* this gets the state of the CSR interrupt: */
 static int
 _tme_sunbw2_int_get(struct tme_sunfb *sunfb)
@@ -417,6 +456,7 @@ _tme_sunbw2_type_set(struct tme_sunfb *sunfb, const char *bw2_type_string)
     sunfb->tme_sunfb_bus_handler_regs = _tme_sunbw2_bus_cycle_csr;
     sunfb->tme_sunfb_int_get = _tme_sunbw2_int_get;
     sunfb->tme_sunfb_memory_update = _tme_sunbw2_memory_update;
+    sunfb->tme_sunfb_device.tme_bus_device_signal = _tme_sunbw2_bus_signal;
 
     /* the original Multibus bwtwo and onboard bwtwo only support
        1152x900 and 1024x1024: */

@@ -176,7 +176,44 @@ _tme_sun2_bus_signal(struct tme_bus_connection *conn_bus_raiser, unsigned int si
 
   /* reset: */
   else if (signal == TME_BUS_SIGNAL_RESET) {
-    /* XXX reset is just ignored for now: */
+
+    /* if this reset signal is coming from the m68k, propagate its
+       negating edge to all busses, like the power-up reset does.  a
+       reboot runs RESET, and devices like the bwtwo must forget
+       state like copy mode then: */
+    if (conn_bus_raiser->tme_bus_connection.tme_connection_other
+	== &sun2->tme_sun2_m68k->tme_m68k_bus_connection.tme_bus_connection
+	&& !signal_asserted) {
+      (*sun2->tme_sun2_obio->tme_bus_signal)
+	(sun2->tme_sun2_obio,
+	 TME_BUS_SIGNAL_RESET
+	 | TME_BUS_SIGNAL_LEVEL_NEGATED
+	 | TME_BUS_SIGNAL_EDGE);
+      (*sun2->tme_sun2_obmem->tme_bus_signal)
+	(sun2->tme_sun2_obmem,
+	 TME_BUS_SIGNAL_RESET
+	 | TME_BUS_SIGNAL_LEVEL_NEGATED
+	 | TME_BUS_SIGNAL_EDGE);
+      if (sun2->tme_sun2_has_vme) {
+	(*sun2->tme_sun2_vmebus->tme_bus_signal)
+	  (sun2->tme_sun2_vmebus,
+	   TME_BUS_SIGNAL_RESET
+	   | TME_BUS_SIGNAL_LEVEL_NEGATED
+	   | TME_BUS_SIGNAL_EDGE);
+      }
+      else {
+	(*sun2->tme_sun2_mbio->tme_bus_signal)
+	  (sun2->tme_sun2_mbio,
+	   TME_BUS_SIGNAL_RESET
+	   | TME_BUS_SIGNAL_LEVEL_NEGATED
+	   | TME_BUS_SIGNAL_EDGE);
+	(*sun2->tme_sun2_mbmem->tme_bus_signal)
+	  (sun2->tme_sun2_mbmem,
+	   TME_BUS_SIGNAL_RESET
+	   | TME_BUS_SIGNAL_LEVEL_NEGATED
+	   | TME_BUS_SIGNAL_EDGE);
+      }
+    }
   }
 
   /* an interrupt signal: */
