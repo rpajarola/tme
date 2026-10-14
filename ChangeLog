@@ -1,3 +1,172 @@
+2026-10-13  Rico Pajarola  <rp@servium.ch>
+
+	* packaging/, .github/workflows/release.yml: Added Debian/Ubuntu
+	(.deb, built with nfpm) and macOS (.pkg) packages.  The macOS
+	package bundles GTK, SDL and their libraries, so it runs without
+	Homebrew.  Publishing a GitHub release builds them, updates the
+	shared apt repository and the Homebrew formula.
+
+	* configure.ac, */*-auto.m4: Fixed the build with autoconf 2.70
+	and 2.71 (e.g. Ubuntu 24.04), which no longer define $as_echo and
+	$as_echo_n; define both after AS_INIT.  configure now fails when
+	there is no yacc, unless tmesh-input.c already exists.
+
+	* host/display/gtk/gtk-display.c: Added screenshots (PNG) and
+	screen recording (MP4, via ffmpeg) to the Screen menu, and the
+	"screenshot" and "record" display commands.
+
+	* machine/sun2/sun2-mainbus.c, machine/sun/sun-bwtwo.c: The Sun-2
+	now propagates a CPU RESET to its buses, and the CSR bwtwos clear
+	copy mode and their interrupt on a reset.
+
+	* scsi/scsi-tape.c: Report and clear a pending unit attention on
+	REQUEST SENSE, as real drives do.
+
+	* tools/tme-sunlabel.c: Warn when a plan puts data past 512MB,
+	which SunOS 2.0 can't page from, unless -4 is given.
+
+	* host/eth/udp/udp-eth.c: Added static L2TPv3 over UDP (RFC 3931,
+	RFC 4719), without a control connection: the "l2tp", "session",
+	"cookie" and "nocounter" arguments.  Datagrams with another
+	session or cookie are dropped before their sender is learned.
+	Fixed peers get a keepalive every 60 seconds.
+
+	* bus/multibus/sun-mie.c: The memory port now covers all 256KB of
+	board memory, and the i82586 interrupt is latched in the CSR and
+	only asserted on the Multibus when enabled.  SunOS 2.0's ie driver
+	works now.
+
+	* machine/sun/sun-bwtwo.c: Copy mode only copies the main memory
+	bytes that changed since the last display update.
+
+	* ic/mm58167.c: Fixed the thousandths of seconds register, and
+	never return the same digit on consecutive reads, so the SunOS 2.0
+	kernel finds the TOD clock.
+
+2026-10-12  Rico Pajarola  <rp@servium.ch>
+
+	* scsi/emulexmt02.c: Return the additional sense bytes when no
+	sense is pending, so SunOS 2.0 can open the tape.
+
+	* machine/sun2/sun2-mmu.c: CPU accesses to Multibus DVMA space now
+	time out, fixing SunOS 2.0's "dvma collision" panic.
+
+	* machine/sun/sun-bwtwo.c, machine/sun/sun-fb.c: Emulate the bwtwo
+	CSR interrupt and copy mode, which used to abort.
+
+	* machine/sun2/, machine/sun3/, machine/sun4/: Track each bus's
+	interrupt levels separately, so one bus negating a level no longer
+	loses another bus's interrupt at the same level.
+
+	* ic/am9513.c: Count elapsed time at full precision, carrying the
+	partial tick, so counters close to expiring still reach zero (the
+	Sun-2 PROM's keyboard polling depends on it).
+
+2026-10-11  Rico Pajarola  <rp@servium.ch>
+
+	* scsi/scsi-disk.c: Warn about ACB-4000 disk images larger than
+	1GB, which its 6-byte commands can't address.
+
+	* tools/tme-sunlabel.c: Added tme-sunlabel, which plans Sun disk
+	labels and geometries, prints the answers for diag, and with -w
+	writes the label into an image.
+
+	* tools/tme-mktap.c: Added tme-mktap, which makes and lists SIMH
+	tape images.
+
+	* host/posix-tape.c: Read SIMH .tap tape images, with their
+	records and tape marks.
+
+	* tmesh/tmesh.c, configure.ac: Line editing and history at the
+	tmesh prompt with readline or libedit (--without-readline), a
+	double Ctrl-C to quit, and a Quit item in the GTK display.
+
+	* libtme/media.c, tme/media.h, host/display/gtk/gtk-media.c: Added
+	a Media menu to the GTK display for loading and ejecting removable
+	disks and tapes, and a media status line.
+
+	* ic/sparc/sparc-timing.c: Don't spin in short SPARC timing loops
+	with cooperative threads, which froze the display during a
+	SPARCstation network boot.
+
+	* machine/sun/my-sun-macros.txt: F1 is now also the Sun Stop (L1)
+	key.
+
+	* machine/sun/sun-idprom.c, machine/sun2/, machine/sun3/,
+	machine/sun4/: Create missing IDPROM, EEPROM and NVRAM files on
+	first run.  Added the tme/machine/sun3/eeprom and
+	tme/machine/sun4/nvram elements.
+
+	* ic/m68k/m68k-opmap-make.c, machine/sun/tme-sun-eeprom.c,
+	machine/sun/tme-sun-idprom.c: Replaced the Perl scripts with C, so
+	building no longer needs Perl or X11::Protocol.
+
+	* ic/z8530.c: Drop transmit data on a channel with no connection,
+	so a SPARCstation without a keyboard falls back to ttya.
+
+	* ic/mk48txx.c: Let the clock pass the SPARCstation 2 kickstart
+	self-test.
+
+	* ic/am7990.c: Complete transmits when no Ethernet is attached.
+
+	* tmesh/tmesh.c, tmesh/tmesh-cmds.c: Exit cleanly at the end of
+	input instead of aborting or hanging.
+
+	* host/display/gtk/gtk-mouse.c, host/display/gtk/gtk-keyboard.c:
+	Capture the mouse with a click (released with Ctrl+Shift+Cmd on
+	macOS, Ctrl+Shift+Alt elsewhere), hide the cursor and keep the
+	pointer inside the screen while captured.
+
+2026-10-10  Rico Pajarola  <rp@servium.ch>
+
+	* ic/i825x6.c: Complete transmits when no Ethernet is attached,
+	fixing "ie0: iebark reset".
+
+	* generic/fb-xlat-auto.m4: Write the merged word when flushing an
+	unaligned destination FIFO.
+
+	* libtme/threads-sjlj.c: Fixed the poll timeout when no thread is
+	runnable, which could hang the emulator once SunOS idled.
+
+	* tmesh/Makefile.am, configure.ac: Relink tmesh when a host module
+	changes.
+
+	* ic/m68k/m68k-misc.c, machine/sun3/: Emulate the Sun-3 watchdog
+	reset after a double fault ("command mainbus0 watchdog-reset
+	false" keeps the CPU halted instead), and clear the interrupt
+	register on RESET.  The Sun-2 no longer aborts on HALT.
+
+	* host/display/gtk/gtk-display.c, generic/fb-xlat-auto.m4: Fixed
+	the GTK display on HiDPI screens and when doubling.
+
+	* acinclude.m4, configure.ac: Fixed the autoreconf warnings and the
+	configure probes that failed under C23.  SHIFTMAX and ALIGNOF are
+	no longer probed.
+
+	* configure.ac: Find GLIB, GTK and SDL with pkg-config.
+
+2026-10-08  Rico Pajarola  <rp@servium.ch>
+
+	* serial/serial-kb.c: Built the Sun keyboard maps into the
+	keyboard element; the map argument is now optional.
+
+	* libtme/module.c, tmesh/Makefile.am, configure.ac: Link the
+	modules into tmesh by default, so it runs without installing
+	(--disable-builtin-modules restores run-time loading).
+
+2026-10-06  Rico Pajarola  <rp@servium.ch>
+
+	* configure.ac, Makefile.am, lib/, host/, scsi/, ic/ncr53c9x.c,
+	tme/: Fixed the build on macOS, and added the prototypes C23
+	needs.
+
+	* host/eth/udp/udp-eth.c, libtme/event.c: Replaced OpenVPN with a
+	tme/host/udp/eth element carrying Ethernet frames over UDP, as
+	the HECnet bridge, simh, QEMU and gobootd's bootbridge do.
+	Removed libopenvpn and the openvpn host; libtme/event.c is now a
+	small poll(2) implementation.  Native Windows (MinGW) builds are
+	no longer supported; use Cygwin.
+
 Sun Jun 06 20:52:27 2010  Matthew Fredette  <fredette@alum.mit.edu>
 
 	* Release 0.8 out.
