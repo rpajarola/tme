@@ -1,5 +1,6 @@
-# Builds packages when a release is published (or for an existing release,
-# run by hand) and attaches them to the release, then has rpajarola/apt
+# Builds the source tarball and packages when a release is published (or
+# for an existing release, run by hand) and attaches them to the release,
+# then has rpajarola/apt
 # rebuild the apt repository and points the Homebrew formula at the
 # release. See packaging/README.md for the one-time setup.
 name: release
@@ -20,6 +21,28 @@ env:
   TAG: ${{ github.event.release.tag_name || inputs.tag }}
 
 jobs:
+  # make dist: configure and the other generated files included, so
+  # building from it needs no autotools or bison.
+  source:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential autoconf automake libtool libltdl-dev pkg-config bison texinfo libgtk-3-dev libsdl2-dev
+      - name: Build
+        run: |
+          autoreconf -fi
+          ./configure
+          make dist
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" tme-*.tar.gz --clobber
+
   deb:
     strategy:
       matrix:

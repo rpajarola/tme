@@ -33,25 +33,30 @@ Packages may be made available at some point for some of the hosts above, but sh
 (which stopped at 0.8 as of this writing) is still packaged on most of these platforms.
 
 Prerequisites:
-If building from source tarball, you must have certain packages installed on your host platform of choice.  
+If building from source, you must have certain packages installed on your host platform of choice.  
 
 At a minimum, if not already installed, you should install these packages (latest versions should work) -
-1. bison
-2. perl
-3. GTK+3
+1. bison (only when building from git; release tarballs include the generated parser)
+2. GTK+3 and SDL2
+3. pkg-config
 
 Obtaining:
-Source tarball available via anonymous access at ftp://ftp.phabrics.com/phabrics/contrib/tme-$version.tgz.
+Source tarballs (tme-$version.tar.gz, with configure already generated, so no autotools or bison are needed) are attached to each release at https://github.com/rpajarola/tme/releases.
+The original upstream tarballs were available at ftp://ftp.phabrics.com/phabrics/contrib/tme-$version.tgz.
 
 Packages:
-Packages for Debian and Ubuntu (an apt repository) and macOS (Homebrew, or an installer package that needs no Homebrew) are described in packaging/README.md -
-  brew install rpajarola/tap/tme
-  sudo apt install tme              (after adding the apt repository)
+Packages for Debian and Ubuntu, and for macOS, are attached to each release at https://github.com/rpajarola/tme/releases, and available from -
+  Debian and Ubuntu (amd64, arm64): the apt repository at https://rpajarola.github.io/apt/, then
+    sudo apt install tme
+  macOS: the Homebrew tap at https://github.com/rpajarola/homebrew-tap -
+    brew install rpajarola/tap/tme
+  or the macOS installer package from a release, which needs no Homebrew.
+See packaging/README.md for what is installed and how the packages are built.
 
 Installation:
 This should be the standard GNU install as documented in INSTALL.  Some general steps ($srcdir refers to location that the source package is extracted to.)-
 
-1. tar xzf tme-$version.tgz
+1. tar xzf tme-$version.tar.gz
 2. mkdir $builddir
 3. cd $builddir
 4. $srcdir/configure --prefix=$installdir --disable-warnings (--enable-debug --disable-recode // see notes)

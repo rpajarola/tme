@@ -90,10 +90,13 @@ Tag, then publish a GitHub release for the tag:
 
 ```
 git tag v0.12rc7 && git push origin v0.12rc7
-gh release create v0.12rc7 --generate-notes
+gh release create v0.12rc7 -R rpajarola/tme --generate-notes
 ```
 
-The release workflow then attaches the `.deb`s and the `.pkg`, has
+(`-R`, since this is a fork, and gh would otherwise use phabrics/tme.)
+
+The release workflow then attaches the source tarball (`make dist`), the
+`.deb`s and the `.pkg`, has
 [rpajarola/apt](https://github.com/rpajarola/apt) rebuild the apt
 repository (from the `.deb`s of every release of every project in it),
 and updates the formula's URL and checksum in
