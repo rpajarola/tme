@@ -12,4 +12,4 @@ tme_bus_multibus_la_SOURCES = 3c400.c \
 tme_bus_multibus_la_LDFLAGS = -module -version-info 0:0:0
 tme_bus_multibus_la_LIBADD = $(top_builddir)/generic/libtme-generic.la
 
-include $(top_srcdir)/modules
+include $(top_srcdir)/modules.am

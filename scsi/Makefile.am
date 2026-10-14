@@ -26,4 +26,4 @@ tme_scsi_la_SOURCES = \
 tme_scsi_la_LDFLAGS = -rpath $(pkglibdir) -module -version-info 0:0:0
 tme_scsi_la_LIBADD = $(top_builddir)/generic/libtme-generic.la 
 
-include $(top_srcdir)/modules
+include $(top_srcdir)/modules.am

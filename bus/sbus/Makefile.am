@@ -11,4 +11,4 @@ tme_bus_sbus_la_SOURCES = \
 tme_bus_sbus_la_LDFLAGS = -module -version-info 0:0:0
 tme_bus_sbus_la_LIBADD = $(top_builddir)/machine/sun/libtme-machine-sun.la
 
-include $(top_srcdir)/modules
+include $(top_srcdir)/modules.am

@@ -29,4 +29,4 @@ kb-maps.h: $(top_srcdir)/machine/sun/sun-keyboards.txt
 	  sed -e 's/.*/  "&\\n"/' $(top_srcdir)/machine/sun/sun-keyboards.txt; \
 	  echo '  ;'; } > $@
 
-include $(top_srcdir)/modules
+include $(top_srcdir)/modules.am

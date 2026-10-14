@@ -10,4 +10,4 @@ tme_host_gtk_la_SOURCES = gtk-mouse.c gtk-keyboard.c gtk-media.c gtk-display.c g
 tme_host_gtk_la_LDFLAGS = -module -version-info 0:0:0
 tme_host_gtk_la_LIBADD = ../libtme-display.la $(GTK_LIBS)
 
-include $(top_srcdir)/modules
+include $(top_srcdir)/modules.am

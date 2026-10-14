@@ -49,4 +49,4 @@ tme_generic_la_SOURCES = bus-el.c
 tme_generic_la_LDFLAGS = -module -version-info 0:0:0
 tme_generic_la_LIBADD = libtme-generic.la
 
-include $(top_srcdir)/modules
+include $(top_srcdir)/modules.am

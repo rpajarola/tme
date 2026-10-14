@@ -21,4 +21,4 @@ tme_ic_stp22xx_la_LIBADD = $(top_builddir)/generic/libtme-generic.la
 EXTRA_DIST = stp222x-impl.h \
 	stp22xx-impl.h
 
-include $(top_srcdir)/modules
+include $(top_srcdir)/modules.am

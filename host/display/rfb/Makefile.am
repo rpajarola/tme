@@ -10,4 +10,4 @@ tme_host_rfb_la_SOURCES = rfb-display.c
 tme_host_rfb_la_LDFLAGS = -module -version-info 0:0:0
 tme_host_rfb_la_LIBADD = ../libtme-display.la $(RFB_LIBS)
 
-include $(top_srcdir)/modules
+include $(top_srcdir)/modules.am

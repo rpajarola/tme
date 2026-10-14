@@ -16,7 +16,7 @@ CLEANFILES = keymap.h
 keymap.h: keymap-def.h
 	  cp $< $@
 
-include $(top_srcdir)/modules
+include $(top_srcdir)/modules.am
 
 SUBDIRS = . @TME_DISPLAY_HOSTS@
 DIST_SUBDIRS = gtk rfb sdl

@@ -10,4 +10,4 @@ tme_host_tun_la_SOURCES = tun-tap.c
 tme_host_tun_la_LDFLAGS = -module -version-info 0:0:0
 tme_host_tun_la_LIBADD = ../libtme-eth.la $(NATLIBS)
 
-include $(top_srcdir)/modules
+include $(top_srcdir)/modules.am

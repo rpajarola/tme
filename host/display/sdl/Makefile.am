@@ -15,4 +15,4 @@ tme_host_sdl_la_SOURCES = sdl-display.c sdl-keysym.h
 tme_host_sdl_la_LDFLAGS = -module -version-info 0:0:0
 tme_host_sdl_la_LIBADD = ../libtme-display.la $(SDL_LIBS)
 
-include $(top_srcdir)/modules
+include $(top_srcdir)/modules.am

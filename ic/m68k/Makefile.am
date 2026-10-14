@@ -70,4 +70,4 @@ $(pkglib_LTLIBRARIES): ../ieee754/libtme-ieee754.la
 	cd `dirname $@` && $(MAKE) `basename $@`
 force: ;
 
-include $(top_srcdir)/modules
+include $(top_srcdir)/modules.am

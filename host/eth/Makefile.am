@@ -9,7 +9,7 @@ libtme_eth_la_SOURCES = eth-impl.c eth-if.h
 libtme_eth_la_LDFLAGS = -version-info 0:0:0
 libtme_eth_la_LIBADD = $(top_builddir)/generic/libtme-generic.la
 
-include $(top_srcdir)/modules
+include $(top_srcdir)/modules.am
 
 SUBDIRS = . @TME_ETH_HOSTS@
 DIST_SUBDIRS = bsd tun udp

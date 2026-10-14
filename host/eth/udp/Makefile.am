@@ -10,4 +10,4 @@ tme_host_udp_la_SOURCES = udp-eth.c
 tme_host_udp_la_LDFLAGS = -module -version-info 0:0:0
 tme_host_udp_la_LIBADD = ../libtme-eth.la
 
-include $(top_srcdir)/modules
+include $(top_srcdir)/modules.am

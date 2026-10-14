@@ -85,4 +85,4 @@ tme_ic_lsi64854_la_SOURCES = lsi64854.c
 tme_ic_lsi64854_la_LDFLAGS = -rpath $(pkglibdir) -module -version-info 0:0:0
 tme_ic_lsi64854_la_LIBADD = $(top_builddir)/generic/libtme-generic.la
 
-include $(top_srcdir)/modules
+include $(top_srcdir)/modules.am

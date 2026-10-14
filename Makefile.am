@@ -4,8 +4,8 @@
 AUTOMAKE_OPTIONS = 1.4 gnu
 ACLOCAL_AMFLAGS = -I m4
 
-SUBDIRS = tme lib libltdl libtme generic ic machine host bus serial scsi tmesh tools
-EXTRA_DIST = modules edist
+SUBDIRS = . tme lib libltdl libtme generic ic machine host bus serial scsi tmesh tools
+EXTRA_DIST = modules.am edist
 pkgdata_DATA = tmeconfig.h tmememory.h
 
 # target to hook into the distribution:
@@ -20,4 +20,4 @@ dist-hook:
 # If new modules are added, "make modules" must be run to update this list in the source.
 modules-local:
 	rm -f ${top_srcdir}/tme/tme-plugins.txt
-	echo -n 'LDADD = @TME_HOST''_PREOPEN@' > $(top_srcdir)/tme-preopen.txt
+	printf 'LDADD = @TME_HOST''_PREOPEN@' > $(top_srcdir)/tme-preopen.txt
