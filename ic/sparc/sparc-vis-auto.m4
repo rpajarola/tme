@@ -1,4 +1,7 @@
 AS_INIT
+# autoconf 2.70 and 2.71 do not define these:
+as_echo='printf %s\n'
+as_echo_n='printf %s'
 
 # $Id: sparc-vis-auto.sh,v 1.4 2010/02/20 22:01:40 fredette Exp $
 

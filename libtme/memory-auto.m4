@@ -1,4 +1,7 @@
 AS_INIT
+# autoconf 2.70 and 2.71 do not define these:
+as_echo='printf %s\n'
+as_echo_n='printf %s'
 
 # $Id: memory-auto.sh,v 1.2 2010/02/15 15:16:28 fredette Exp $
 

@@ -1,4 +1,7 @@
 AS_INIT
+# autoconf 2.70 and 2.71 do not define these:
+as_echo='printf %s\n'
+as_echo_n='printf %s'
 
 # $Id: fb-xlat-auto.sh,v 1.12 2009/08/30 21:51:53 fredette Exp $
 

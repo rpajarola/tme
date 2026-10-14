@@ -1,4 +1,7 @@
 AS_INIT
+# autoconf 2.70 and 2.71 do not define these:
+as_echo='printf %s\n'
+as_echo_n='printf %s'
 
 # $Id: ieee754-precision.sh,v 1.2 2007/08/26 14:02:04 fredette Exp $
 

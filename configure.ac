@@ -54,6 +54,14 @@ AC_PROG_AWK
 #AC_PROG_CC
 AC_PROG_CPP
 AC_PROG_YACC
+dnl AC_PROG_YACC falls back to "yacc" even if there is none, and the
+dnl build then fails late.  A source tree with tmesh-input.c doesn't
+dnl need one:
+if test "x$YACC" = "xyacc" \
+   && ! command -v yacc > /dev/null 2>&1 \
+   && test ! -f "$srcdir/tmesh/tmesh-input.c"; then
+  AC_MSG_ERROR([bison or byacc is needed to build tmesh (Debian and Ubuntu: apt install bison; macOS: Xcode command line tools)])
+fi
 AC_PROG_INSTALL
 AC_PROG_MAKE_SET
 

@@ -1,4 +1,7 @@
 AS_INIT
+# autoconf 2.70 and 2.71 do not define these:
+as_echo='printf %s\n'
+as_echo_n='printf %s'
 
 # $Id: sparc-fpu-auto.sh,v 1.6 2009/11/08 16:27:12 fredette Exp $
 

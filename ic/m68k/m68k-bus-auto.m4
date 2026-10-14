@@ -1,4 +1,7 @@
 AS_INIT
+# autoconf 2.70 and 2.71 do not define these:
+as_echo='printf %s\n'
+as_echo_n='printf %s'
 
 # $Id: m68k-bus-auto.sh,v 1.3 2007/02/12 23:47:11 fredette Exp $
 
