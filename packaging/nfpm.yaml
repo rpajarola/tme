@@ -1,0 +1,33 @@
+# build-deb.sh adds the depends list, which dpkg-shlibdeps works out from
+# the programs.
+name: tme
+arch: "${ARCH}"
+platform: linux
+version: "${VERSION}"
+section: otherosfs
+priority: optional
+maintainer: "Rico Pajarola <rp@servium.ch>"
+homepage: "https://github.com/rpajarola/tme"
+license: BSD-4-Clause
+description: |
+  The Machine Emulator: Sun-2, Sun-3, Sun-4c and UltraSPARC emulation.
+  tmesh runs machines described in tmesh scripts; examples are in
+  /usr/share/tme/examples. Also includes tools to make Sun IDPROM, EEPROM
+  and disk label images and SIMH tape images.
+
+contents:
+  - src: dist/stage/usr/bin/*
+    dst: /usr/bin/
+    file_info:
+      mode: 0755
+  - src: dist/stage/usr/share/tme/examples
+    dst: /usr/share/tme/examples
+    type: tree
+  - src: dist/stage/usr/share/info/tme.info.gz
+    dst: /usr/share/info/tme.info.gz
+  - src: README
+    dst: /usr/share/doc/tme/README
+  - src: NEWS
+    dst: /usr/share/doc/tme/NEWS
+  - src: COPYING
+    dst: /usr/share/doc/tme/copyright

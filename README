@@ -43,6 +43,11 @@ At a minimum, if not already installed, you should install these packages (lates
 Obtaining:
 Source tarball available via anonymous access at ftp://ftp.phabrics.com/phabrics/contrib/tme-$version.tgz.
 
+Packages:
+Packages for Debian and Ubuntu (an apt repository) and macOS (Homebrew, or an installer package that needs no Homebrew) are described in packaging/README.md -
+  brew install rpajarola/tap/tme
+  sudo apt install tme              (after adding the apt repository)
+
 Installation:
 This should be the standard GNU install as documented in INSTALL.  Some general steps ($srcdir refers to location that the source package is extracted to.)-
 
