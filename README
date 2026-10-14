@@ -47,9 +47,9 @@ The original upstream tarballs were available at ftp://ftp.phabrics.com/phabrics
 Packages:
 Packages for Debian and Ubuntu, and for macOS, are attached to each release at https://github.com/rpajarola/tme/releases, and available from -
   Debian and Ubuntu (amd64, arm64): the apt repository at https://rpajarola.github.io/apt/, then
-    sudo apt install tme
+    sudo apt install tme-rp
   macOS: the Homebrew tap at https://github.com/rpajarola/homebrew-tap -
-    brew install rpajarola/tap/tme
+    brew install rpajarola/tap/tme-rp
   or the macOS installer package from a release, which needs no Homebrew.
 See packaging/README.md for what is installed and how the packages are built.
 

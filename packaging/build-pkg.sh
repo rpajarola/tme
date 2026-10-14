@@ -68,7 +68,7 @@ cp packaging/macos/fonts.conf "$gtk/fonts.conf"
 pkgbuild --root "$root" --identifier io.github.rpajarola.tme --version "$VERSION" \
   --install-location / --ownership recommended "$work/tme.pkg"
 mkdir -p dist
-out="dist/tme-$VERSION-$(uname -m).pkg"
+out="dist/tme-rp-$VERSION-$(uname -m).pkg"
 sign=()
 [ -n "${PKG_SIGN_IDENTITY:-}" ] && sign=(--sign "$PKG_SIGN_IDENTITY")
 productbuild --package "$work/tme.pkg" ${sign[@]+"${sign[@]}"} "$out"

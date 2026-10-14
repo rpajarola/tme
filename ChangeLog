@@ -1,3 +1,27 @@
+2026-10-14  Rico Pajarola  <rp@servium.ch>
+
+	* Release 1.0.0.  This fork now has its own version numbers,
+	starting at 1.0.0, since it has diverged from upstream 0.12rc7
+	(which continues as nme, at github.com/phabrics/nme).
+
+	* configure.ac: Bumped version to 1.0.0.
+
+	* packaging/: The packages are now called tme-rp.  The .deb
+	conflicts with, replaces and provides tme; the Homebrew formula
+	is renamed from tme.  The programs keep their names.
+
+	* .github/workflows/release.yml: Attach the make dist tarball to
+	each release.
+
+	* Makefile.am, modules.am, */Makefile.am: Fixed make dist, which
+	ran the "modules" target instead of distributing the "modules"
+	include file (now modules.am).  make modules now works with a
+	POSIX /bin/sh, and resets the module lists before the
+	subdirectories add to them.
+
+	* machine/sun4/Makefile.am: Distribute the other SPARCstation
+	sample configurations.
+
 2026-10-13  Rico Pajarola  <rp@servium.ch>
 
 	* packaging/, .github/workflows/release.yml: Added Debian/Ubuntu

@@ -1,9 +1,13 @@
 # Packages
 
-tme is packaged as a `.deb` for Debian and Ubuntu (amd64 and arm64,
-built on Ubuntu 24.04, published in the shared apt repository
-[rpajarola/apt](https://github.com/rpajarola/apt)), a `.pkg` for macOS, and a Homebrew formula in
+tme is packaged as `tme-rp` (called `tme` before 1.0.0): a `.deb` for
+Debian and Ubuntu (amd64 and arm64, built on Ubuntu 24.04, published in
+the shared apt repository [rpajarola/apt](https://github.com/rpajarola/apt)),
+a `.pkg` for macOS, and a Homebrew formula in
 [rpajarola/homebrew-tap](https://github.com/rpajarola/homebrew-tap).
+The `.deb` conflicts with, replaces and provides `tme`, so it replaces
+an installed `tme` package. The programs keep their names (`tmesh` and
+the `tme-*` tools).
 Publishing a GitHub release builds all of them
 ([`.github/workflows/release.yml`](../.github/workflows/release.yml)).
 
@@ -17,18 +21,18 @@ sudo curl -fsSLo /usr/share/keyrings/rpajarola.gpg https://rpajarola.github.io/a
 echo "deb [signed-by=/usr/share/keyrings/rpajarola.gpg] https://rpajarola.github.io/apt stable main" \
   | sudo tee /etc/apt/sources.list.d/rpajarola.list
 sudo apt update
-sudo apt install tme
+sudo apt install tme-rp
 ```
 
-or a downloaded package: `sudo apt install ./tme_<version>_<arch>.deb`.
+or a downloaded package: `sudo apt install ./tme-rp_<version>_<arch>.deb`.
 
 **macOS** with Homebrew:
 
 ```
-brew install rpajarola/tap/tme
+brew install rpajarola/tap/tme-rp
 ```
 
-or the `.pkg` from a release: `sudo installer -pkg tme-<version>-arm64.pkg -target /`
+or the `.pkg` from a release: `sudo installer -pkg tme-rp-<version>-arm64.pkg -target /`
 (the package is not signed, so double-clicking it needs right-click → Open).
 
 ## What is installed
@@ -70,14 +74,14 @@ Debian or Ubuntu:
 ```
 sudo apt install build-essential autoconf automake libtool libltdl-dev pkg-config \
   bison texinfo libgtk-3-dev libsdl2-dev dpkg-dev
-packaging/build-deb.sh      # dist/tme_<version>_<arch>.deb
+packaging/build-deb.sh      # dist/tme-rp_<version>_<arch>.deb
 ```
 
 macOS:
 
 ```
 brew install autoconf automake libtool pkgconf texinfo gtk+3 sdl2
-packaging/build-pkg.sh      # dist/tme-<version>-<arch>.pkg
+packaging/build-pkg.sh      # dist/tme-rp-<version>-<arch>.pkg
 ```
 
 Both need nfpm for the `.deb` (`go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest`,
@@ -89,8 +93,8 @@ or a release binary). The version is the git tag without its `v`, or
 Tag, then publish a GitHub release for the tag:
 
 ```
-git tag v0.12rc7 && git push origin v0.12rc7
-gh release create v0.12rc7 -R rpajarola/tme --generate-notes
+git tag v1.0.0 && git push origin v1.0.0
+gh release create v1.0.0 -R rpajarola/tme --generate-notes
 ```
 
 (`-R`, since this is a fork, and gh would otherwise use phabrics/tme.)

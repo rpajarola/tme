@@ -43,5 +43,5 @@ depends=$(cd "$work" && dpkg-shlibdeps -O -e $bins | sed -n 's/^shlibs:Depends=/
 } > "$work/nfpm.yaml"
 
 VERSION="$VERSION" ARCH="$ARCH" nfpm pkg --config "$work/nfpm.yaml" --packager deb \
-  --target "dist/tme_${VERSION}_${ARCH}.deb"
-ls -l "dist/tme_${VERSION}_${ARCH}.deb"
+  --target "dist/tme-rp_${VERSION}_${ARCH}.deb"
+ls -l "dist/tme-rp_${VERSION}_${ARCH}.deb"

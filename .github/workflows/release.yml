@@ -98,7 +98,7 @@ jobs:
             echo "PACKAGES_TOKEN is not set; skipping"
             exit 0
           fi
-          packaging/update-tap.sh tme "$TAG"
+          packaging/update-tap.sh tme-rp "$TAG"
 
   apt:
     needs: deb

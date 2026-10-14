@@ -1,6 +1,6 @@
 # build-deb.sh adds the depends list, which dpkg-shlibdeps works out from
 # the programs.
-name: tme
+name: tme-rp
 arch: "${ARCH}"
 platform: linux
 version: "${VERSION}"
@@ -9,8 +9,17 @@ priority: optional
 maintainer: "Rico Pajarola <rp@servium.ch>"
 homepage: "https://github.com/rpajarola/tme"
 license: BSD-4-Clause
+# Replaces the tme package, its name before 1.0.0 (and any other build of
+# tme), which installs the same files.
+provides:
+  - tme
+conflicts:
+  - tme
+replaces:
+  - tme
 description: |
   The Machine Emulator: Sun-2, Sun-3, Sun-4c and UltraSPARC emulation.
+  This is the rpajarola fork of tme, which this package replaces.
   tmesh runs machines described in tmesh scripts; examples are in
   /usr/share/tme/examples. Also includes tools to make Sun IDPROM, EEPROM
   and disk label images and SIMH tape images.
@@ -26,8 +35,8 @@ contents:
   - src: dist/stage/usr/share/info/tme.info.gz
     dst: /usr/share/info/tme.info.gz
   - src: README
-    dst: /usr/share/doc/tme/README
+    dst: /usr/share/doc/tme-rp/README
   - src: NEWS
-    dst: /usr/share/doc/tme/NEWS
+    dst: /usr/share/doc/tme-rp/NEWS
   - src: COPYING
-    dst: /usr/share/doc/tme/copyright
+    dst: /usr/share/doc/tme-rp/copyright
