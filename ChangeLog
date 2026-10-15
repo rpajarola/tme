@@ -1,3 +1,9 @@
+2026-10-15  Rico Pajarola  <rp@servium.ch>
+
+	* tools/tme-mktap.c: A FILE@BLOCK-SIZE argument sets the block
+	size for that file and the ones after it, so one tape can mix
+	block sizes (e.g., boot@512 vmunix@10240 root).
+
 2026-10-14  Rico Pajarola  <rp@servium.ch>
 
 	* Release 1.0.0.  This fork now has its own version numbers,

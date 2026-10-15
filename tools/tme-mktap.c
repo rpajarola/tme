@@ -23,13 +23,16 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-/* usage: tme-mktap [ -b BLOCK-SIZE ] -o IMAGE FILE...
+/* usage: tme-mktap [ -b BLOCK-SIZE ] -o IMAGE FILE[@BLOCK-SIZE]...
           tme-mktap -t IMAGE
 
    the first form makes a SIMH tape image (the .tap format used by
    simh, and by tme's tape element) with each FILE as one tape file,
    cut into records of BLOCK-SIZE bytes (512 by default, as on QIC
-   cartridge tapes; the last record of a file may be shorter).  each
+   cartridge tapes; the last record of a file may be shorter).  a
+   FILE@BLOCK-SIZE argument changes the block size for that FILE and
+   the ones after it, so "boot@512 vmunix@10240 root" writes boot in
+   512-byte records and vmunix and root in 10240-byte records.  each
    tape file is followed by a tape mark, and the tape ends with a
    second tape mark and an end-of-medium marker.
 
@@ -51,7 +54,7 @@ static const char *prog;
 static void
 usage(void)
 {
-  fprintf(stderr, "usage: %s [ -b BLOCK-SIZE ] -o IMAGE FILE...\n", prog);
+  fprintf(stderr, "usage: %s [ -b BLOCK-SIZE ] -o IMAGE FILE[@BLOCK-SIZE]...\n", prog);
   fprintf(stderr, "       %s -t IMAGE\n", prog);
   exit(1);
 }
@@ -83,18 +86,60 @@ get_word(FILE *in, unsigned long *_value)
   return (1);
 }
 
+/* this parses a block size, returning nonzero on success: */
+static int
+parse_block_size(const char *string, unsigned long *_block_size)
+{
+  unsigned long block_size;
+  char *end;
+
+  block_size = strtoul(string, &end, 0);
+  if (*string == '\0' || *end != '\0'
+      || block_size == 0 || block_size > 0x0fffffff) {
+    return (0);
+  }
+  *_block_size = block_size;
+  return (1);
+}
+
 /* this makes a SIMH tape image: */
 static int
 make(const char *image, unsigned long block_size, char **files, int count)
 {
   FILE *out, *in;
   unsigned char *buffer;
+  unsigned long *sizes, block_size_max;
+  char *at;
   size_t length;
   unsigned long records;
   int file_i;
 
-  buffer = malloc(block_size);
-  out = fopen(image, "wb");
+  /* split any @BLOCK-SIZE off of the files, and size the buffer for
+     the largest block size: */
+  sizes = malloc(sizeof(*sizes) * count);
+  if (sizes == NULL) {
+    fprintf(stderr, "%s: %s\n", prog, strerror(errno));
+    return (1);
+  }
+  block_size_max = 0;
+  for (file_i = 0; file_i < count; file_i++) {
+    at = strrchr(files[file_i], '@');
+    if (at != NULL && at != files[file_i]) {
+      if (!parse_block_size(at + 1, &block_size)) {
+	fprintf(stderr, "%s: bad block size in %s\n", prog, files[file_i]);
+	free(sizes);
+	return (1);
+      }
+      *at = '\0';
+    }
+    sizes[file_i] = block_size;
+    if (block_size > block_size_max) {
+      block_size_max = block_size;
+    }
+  }
+
+  buffer = malloc(block_size_max);
+  out = (buffer == NULL ? NULL : fopen(image, "wb"));
   if (buffer == NULL || out == NULL) {
     fprintf(stderr, "%s: %s: %s\n", prog, image, strerror(errno));
     return (1);
@@ -111,7 +156,7 @@ make(const char *image, unsigned long block_size, char **files, int count)
 
     /* the file's records: */
     records = 0;
-    while ((length = fread(buffer, 1, block_size, in)) > 0) {
+    while ((length = fread(buffer, 1, sizes[file_i], in)) > 0) {
       put_word(out, length);
       fwrite(buffer, 1, length, out);
       if (length & 1) {
@@ -131,7 +176,8 @@ make(const char *image, unsigned long block_size, char **files, int count)
 
     /* the tape mark after the file: */
     put_word(out, 0);
-    printf("file %d: %s, %lu records\n", file_i + 1, files[file_i], records);
+    printf("file %d: %s, %lu records of %lu bytes\n",
+	   file_i + 1, files[file_i], records, sizes[file_i]);
   }
 
   /* the end of the tape: */
@@ -143,6 +189,7 @@ make(const char *image, unsigned long block_size, char **files, int count)
     return (1);
   }
   free(buffer);
+  free(sizes);
   return (0);
 }
 
@@ -239,7 +286,6 @@ main(int argc, char **argv)
 {
   const char *image, *list_image;
   unsigned long block_size;
-  char *end;
   int arg_i;
 
   prog = strrchr(argv[0], '/');
@@ -249,8 +295,7 @@ main(int argc, char **argv)
   block_size = 512;
   for (arg_i = 1; arg_i < argc && argv[arg_i][0] == '-'; arg_i++) {
     if (strcmp(argv[arg_i], "-b") == 0 && arg_i + 1 < argc) {
-      block_size = strtoul(argv[++arg_i], &end, 0);
-      if (*end != '\0' || block_size == 0 || block_size > 0x0fffffff) {
+      if (!parse_block_size(argv[++arg_i], &block_size)) {
 	fprintf(stderr, "%s: bad block size %s\n", prog, argv[arg_i]);
 	usage();
       }
