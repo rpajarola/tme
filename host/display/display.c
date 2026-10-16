@@ -258,6 +258,21 @@ tme_display_update(void *disp) {
   return rc;
 }
 
+/* this returns the time for a keyboard or mouse event that has no
+   time of its own.  the time is in milliseconds, wrapping, and is
+   never TME_KEYBOARD_EVENT_TIME_UNDEF: */
+tme_uint32_t
+_tme_display_event_time(void)
+{
+  tme_uint32_t event_time;
+
+  event_time = (tme_uint32_t) TME_TIME_GET_MSEC(tme_thread_get_time());
+  if (event_time == TME_KEYBOARD_EVENT_TIME_UNDEF) {
+    event_time++;
+  }
+  return (event_time);
+}
+
 /* the display main thread: */
 static _tme_thret
 tme_display_th_update(void *disp)
