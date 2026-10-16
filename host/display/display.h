@@ -42,6 +42,7 @@
 #include <tme/generic/mouse.h>
 #include <tme/threads.h>
 #include <tme/hash.h>
+#include "display-menu.h"
 
 /* macros: */
 
@@ -88,6 +89,9 @@ struct tme_screen {
   /* the translation function: */
   int (*tme_screen_fb_xlat) _TME_P((struct tme_fb_connection *, 
 				    struct tme_fb_connection *));
+
+  /* any menus and status line, for a backend that draws its own: */
+  struct tme_display_menus *tme_screen_menus;
 
 };
 
@@ -178,6 +182,14 @@ struct tme_display {
   int (*tme_screen_resize) _TME_P((struct tme_screen *));
   int (*tme_screen_redraw) _TME_P((struct tme_screen *, int x, int y, int w, int h));
   int (*tme_screen_update) _TME_P((struct tme_screen *));
+
+  /* for a backend that uses the menus: functions that start choosing
+     files, show an error, and ask whether to quit.  any of these can
+     be NULL: */
+  void (*tme_screen_files_choose) _TME_P((struct tme_screen *,
+					  struct tme_display_files_request *));
+  void (*tme_screen_error) _TME_P((struct tme_screen *, const char *));
+  void (*tme_screen_quit) _TME_P((struct tme_screen *));
 };
 
 /* prototypes: */
