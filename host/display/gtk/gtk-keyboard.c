@@ -39,6 +39,10 @@ _TME_RCSID("$Id: gtk-keyboard.c,v 1.10 2007/02/15 02:15:41 fredette Exp $");
 /* includes: */
 #include "gtk-display.h"
 
+#if TME_KEYBOARD_EVENT_TIME_UNDEF != GDK_CURRENT_TIME
+#error "TME_KEYBOARD_EVENT_TIME_UNDEF and GDK_CURRENT_TIME disagree"
+#endif
+
 /* macros: */
 
 /* types: */
