@@ -137,12 +137,15 @@ struct tme_display_menus {
   /* this changes whenever any menu changes: */
   unsigned long tme_display_menus_generation;
 
-  /* the Scale submenu, the Record item, and the Media menu and the
-     media generation that it shows: */
+  /* the Scale submenu, the Record item, the Media menu and the media
+     generation that it shows, and the Devices menu and the controls
+     generation that it shows: */
   struct tme_display_menu *tme_display_menus_scale;
   struct tme_display_menu_item *tme_display_menus_record;
   struct tme_display_menu *tme_display_menus_media;
   unsigned long tme_display_menus_media_generation;
+  struct tme_display_menu *tme_display_menus_devices;
+  unsigned long tme_display_menus_devices_generation;
 
   /* the status line slots, and when each expires, or zero if it
      doesn't: */

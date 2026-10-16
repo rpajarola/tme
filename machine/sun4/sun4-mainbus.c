@@ -38,6 +38,7 @@ _TME_RCSID("$Id: sun4-mainbus.c,v 1.6 2009/08/30 14:03:11 fredette Exp $");
 
 /* includes: */
 #include "sun4-impl.h"
+#include <tme/control.h>
 #include "../sun/sun-idprom.h"
 #include <tme/ic/z8530.h>
 #include <tme/ic/isil7170.h>
@@ -428,6 +429,47 @@ _tme_sun4_command(struct tme_element *element, const char * const * args, char *
   return (TME_OK);
 }
 
+
+/* the controls: */
+static const struct tme_control_item _tme_sun4_control_items[] = {
+  { "Reset", TME_CONTROL_ITEM_ACTION },
+  { "Diagnostic Switch", TME_CONTROL_ITEM_SWITCH },
+};
+
+/* this returns nonzero iff a control switch is on: */
+static int
+_tme_sun4_controls_get(struct tme_controls *controls, unsigned int item)
+{
+  struct tme_sun4 *sun4;
+
+  sun4 = (struct tme_sun4 *) controls->tme_controls_element->tme_element_private;
+
+  return (item == 1
+	  && (sun4->tme_sun44c_enable & TME_SUN4_ENA_DIAG) != 0);
+}
+
+/* this works a control, with the command that does the same: */
+static int
+_tme_sun4_controls_set(struct tme_controls *controls, unsigned int item,
+		       int value, char **_output)
+{
+  static const char * const commands[][2] = {
+    { "power", "up" },
+    { "diag-switch", NULL },
+  };
+  const char *args[4];
+
+  args[0] = controls->tme_controls_name;
+  args[1] = commands[item][0];
+  args[2] = (commands[item][1] != NULL
+	     ? commands[item][1]
+	     : value
+	     ? "true"
+	     : "false");
+  args[3] = NULL;
+  return (_tme_sun4_command(controls->tme_controls_element, args, _output));
+}
+
 /* the connection scorer: */
 static int
 _tme_sun4_connection_score(struct tme_connection *conn, unsigned int *_score)
@@ -741,6 +783,7 @@ TME_ELEMENT_NEW_DECL(tme_machine_sun4) {
   FILE *idprom_fp;
   tme_uint8_t idprom[TME_SUN_IDPROM_SIZE];
   int arg_i;
+  struct tme_controls *controls;
 
   arg_i = 1;
   usage = FALSE;
@@ -863,6 +906,15 @@ TME_ELEMENT_NEW_DECL(tme_machine_sun4) {
   element->tme_element_private = sun4;
   element->tme_element_connections_new = _tme_sun4_connections_new;
   element->tme_element_command = _tme_sun4_command;
+
+  /* register the controls: */
+  controls = tme_new0(struct tme_controls, 1);
+  controls->tme_controls_element = element;
+  controls->tme_controls_items = _tme_sun4_control_items;
+  controls->tme_controls_count = (TME_SUN4_IS_SUN4(sun4) ? 2 : 1);
+  controls->tme_controls_get = _tme_sun4_controls_get;
+  controls->tme_controls_set = _tme_sun4_controls_set;
+  tme_controls_register(controls);
 
   return (TME_OK);
 }
