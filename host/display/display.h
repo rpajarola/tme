@@ -208,5 +208,13 @@ int _tme_mouse_connections_new _TME_P((struct tme_display *,
 int _tme_mouse_buttons_event _TME_P((int buttons, int x, int y, void *disp));
 int _tme_mouse_button_press _TME_P((int button, int x, int y, struct tme_display *));
 
+/* the keysym that isn't one: */
+#define TME_KEYSYM_VOID		(0xffffff)
+const char *_tme_keysym_name _TME_P((tme_keyboard_keyval_t));
+tme_keyboard_keyval_t _tme_keysym_from_name _TME_P((const char *));
+void _tme_keysym_convert_case _TME_P((tme_keyboard_keyval_t,
+				      tme_keyboard_keyval_t *,
+				      tme_keyboard_keyval_t *));
+
 #endif /* _HOST_DISPLAY_H */
 
