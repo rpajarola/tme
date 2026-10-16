@@ -514,6 +514,16 @@ AC_CHECK_LIB(
 )
 AC_SUBST([DL_LIBS])
 
+dnl the displays compress screenshots with zlib, if it's there:
+AC_CHECK_HEADER([zlib.h],
+  [AC_CHECK_LIB(
+	[z],
+	[compress2],
+	[ZLIB_LIBS="-lz"
+	 AC_DEFINE([HAVE_ZLIB], [1], [Define if you have zlib.])]
+  )])
+AC_SUBST([ZLIB_LIBS])
+
 AC_CHECK_LIB(
 	[nsl],
 	[inet_ntoa],

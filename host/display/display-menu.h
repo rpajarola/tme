@@ -137,9 +137,10 @@ struct tme_display_menus {
   /* this changes whenever any menu changes: */
   unsigned long tme_display_menus_generation;
 
-  /* the Scale submenu, and the Media menu and the media generation
-     that it shows: */
+  /* the Scale submenu, the Record item, and the Media menu and the
+     media generation that it shows: */
   struct tme_display_menu *tme_display_menus_scale;
+  struct tme_display_menu_item *tme_display_menus_record;
   struct tme_display_menu *tme_display_menus_media;
   unsigned long tme_display_menus_media_generation;
 

@@ -60,6 +60,15 @@
 /* types: */
 
 struct tme_display;
+struct tme_display_record;
+
+/* an image of a screen, at the size of the emulated framebuffer, with
+   each pixel 0x00RRGGBB in host byte order: */
+struct tme_display_image {
+  int tme_display_image_width;
+  int tme_display_image_height;
+  tme_uint32_t *tme_display_image_pixels;
+};
 
 /* a screen: */
 struct tme_screen {
@@ -92,6 +101,9 @@ struct tme_screen {
 
   /* any menus and status line, for a backend that draws its own: */
   struct tme_display_menus *tme_screen_menus;
+
+  /* any recording of the screen: */
+  struct tme_display_record *tme_screen_record;
 
 };
 
@@ -190,6 +202,15 @@ struct tme_display {
 					  struct tme_display_files_request *));
   void (*tme_screen_error) _TME_P((struct tme_screen *, const char *));
   void (*tme_screen_quit) _TME_P((struct tme_screen *));
+
+  /* for a backend with its own status line, a function that shows a
+     message in it: */
+  void (*tme_screen_message) _TME_P((struct tme_screen *, const char *));
+
+  /* for a backend that can capture its screens, a function that
+     captures an image of a screen, with the mutex locked, allocating
+     its pixels, and returning an errno value: */
+  int (*tme_screen_capture) _TME_P((struct tme_screen *, struct tme_display_image *));
 };
 
 /* prototypes: */
@@ -217,6 +238,12 @@ void _tme_screen_xlat_set _TME_P((struct tme_screen *screen));
 int _tme_screen_configure _TME_P((struct tme_screen *screen));
 int tme_display_init _TME_P((struct tme_element *, struct tme_display *));
 tme_uint32_t _tme_display_event_time _TME_P((void));
+int _tme_display_screenshot _TME_P((struct tme_screen *, const char *, char **));
+int _tme_display_record_start _TME_P((struct tme_screen *, const char *, char **));
+int _tme_display_record_stop _TME_P((struct tme_screen *, char **));
+int _tme_display_recording _TME_P((struct tme_screen *));
+void _tme_display_record_tick _TME_P((struct tme_screen *));
+int _tme_display_command _TME_P((struct tme_element *, const char * const *, char **));
 void _tme_keyboard_new _TME_P((struct tme_display *));
 int _tme_keyboard_connections_new _TME_P((struct tme_display *,
 					  struct tme_connection **));

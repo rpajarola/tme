@@ -255,6 +255,9 @@ tme_display_update(void *disp) {
 	display->tme_screen_update(screen);
     }
     screen->tme_screen_update = TME_SCREEN_UPDATE_NONE;  
+
+    /* if the screen is being recorded, send any frames that are due: */
+    _tme_display_record_tick(screen);
   }
 
   /* unlock the mutex: */
@@ -735,6 +738,7 @@ int tme_display_init(struct tme_element *element,
   /* fill the element: */
   element->tme_element_private = display;
   element->tme_element_connections_new = _tme_display_connections_new;
+  element->tme_element_command = _tme_display_command;
 
   return (TME_OK);
 }

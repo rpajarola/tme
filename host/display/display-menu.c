@@ -263,8 +263,13 @@ _tme_display_message(screen, format, va_alist)
 #endif /* HAVE_STDARG_H */
   vsnprintf(message, sizeof(message), format, args);
   va_end(args);
-  _tme_display_status_set(screen, TME_DISPLAY_STATUS_MESSAGE,
-			  message, TME_DISPLAY_STATUS_MESSAGE_MSEC);
+  if (screen->tme_screen_display->tme_screen_message != NULL) {
+    (*screen->tme_screen_display->tme_screen_message)(screen, message);
+  }
+  else {
+    _tme_display_status_set(screen, TME_DISPLAY_STATUS_MESSAGE,
+			    message, TME_DISPLAY_STATUS_MESSAGE_MSEC);
+  }
 }
 
 /* this shows an error, in a dialog if the backend has them, else in
@@ -304,6 +309,52 @@ _tme_display_menu_scale(struct tme_screen *screen,
 			struct tme_display_menu_item *item)
 {
   _tme_screen_scale_set(screen, item->tme_display_menu_item_value);
+}
+
+/* this shows any error output from a capture: */
+static void
+_tme_display_menu_capture_output(struct tme_screen *screen, int rc, char *output)
+{
+  if (output != NULL) {
+    if (rc != TME_OK) {
+      _tme_display_message(screen, "%s", output);
+    }
+    tme_free(output);
+  }
+}
+
+/* this is called for the Save Screenshot item: */
+static void
+_tme_display_menu_screenshot(struct tme_screen *screen,
+			     struct tme_display_menu_item *item)
+{
+  char *output;
+  int rc;
+
+  output = NULL;
+  rc = _tme_display_screenshot(screen, NULL, &output);
+  _tme_display_menu_capture_output(screen, rc, output);
+}
+
+/* this is called for the Record item: */
+static void
+_tme_display_menu_record(struct tme_screen *screen,
+			 struct tme_display_menu_item *item)
+{
+  char *output;
+  int rc;
+
+  output = NULL;
+  rc = TME_OK;
+  if (item->tme_display_menu_item_checked) {
+    if (!_tme_display_recording(screen)) {
+      rc = _tme_display_record_start(screen, NULL, &output);
+    }
+  }
+  else if (_tme_display_recording(screen)) {
+    rc = _tme_display_record_stop(screen, &output);
+  }
+  _tme_display_menu_capture_output(screen, rc, output);
 }
 
 /* this is called for the Quit item: */
@@ -738,6 +789,19 @@ _tme_display_menus_new(struct tme_screen *screen)
   _tme_display_menu_append(menu, TME_DISPLAY_MENU_ITEM_SEPARATOR,
 			   NULL, NULL, NULL);
   item = _tme_display_menu_append(menu, TME_DISPLAY_MENU_ITEM_ACTION,
+				  _("Save Screenshot"),
+				  _tme_display_menu_screenshot, NULL);
+  item->tme_display_menu_item_enabled
+    = (screen->tme_screen_display->tme_screen_capture != NULL);
+  item = _tme_display_menu_append(menu, TME_DISPLAY_MENU_ITEM_CHECK,
+				  _("Record"),
+				  _tme_display_menu_record, NULL);
+  item->tme_display_menu_item_enabled
+    = (screen->tme_screen_display->tme_screen_capture != NULL);
+  menus->tme_display_menus_record = item;
+  _tme_display_menu_append(menu, TME_DISPLAY_MENU_ITEM_SEPARATOR,
+			   NULL, NULL, NULL);
+  item = _tme_display_menu_append(menu, TME_DISPLAY_MENU_ITEM_ACTION,
 				  _("Quit"), _tme_display_menu_quit, NULL);
   item->tme_display_menu_item_shortcut = tme_strdup(TME_DISPLAY_MENU_QUIT_SHORTCUT);
   item->tme_display_menu_item_enabled
@@ -768,8 +832,15 @@ _tme_display_menus_update(struct tme_screen *screen)
     return;
   }
 
-  /* update the menus: */
+  /* update the menus.  a recording can start and stop from commands,
+     or stop by itself: */
   _tme_display_menu_scale_update(screen);
+  if (menus->tme_display_menus_record->tme_display_menu_item_checked
+      != _tme_display_recording(screen)) {
+    menus->tme_display_menus_record->tme_display_menu_item_checked
+      = _tme_display_recording(screen);
+    _tme_display_menu_changed(screen);
+  }
   _tme_display_menu_media_update(screen);
 
   /* clear any status line slots that have expired: */

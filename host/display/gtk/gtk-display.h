@@ -101,17 +101,10 @@ struct tme_gtk_screen {
   GtkWidget *tme_gtk_screen_media_label;
   unsigned long tme_gtk_screen_media_generation;
 
-  /* screen capture: the status bar context ID for its messages, the
-     Record menu item, and while recording, the pipe to ffmpeg, the
-     frame size, and the file being recorded: */
+  /* screen capture: the status bar context ID for its messages, and
+     the Record menu item: */
   guint tme_gtk_screen_capture_cid;
   GtkWidget *tme_gtk_screen_record_item;
-  FILE *tme_gtk_screen_record;
-  int tme_gtk_screen_record_width;
-  int tme_gtk_screen_record_height;
-  char *tme_gtk_screen_record_file;
-  gint64 tme_gtk_screen_record_start;
-  unsigned long tme_gtk_screen_record_frames;
 };
 
 /* a menu item: */
