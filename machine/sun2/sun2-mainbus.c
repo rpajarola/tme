@@ -38,6 +38,7 @@ _TME_RCSID("$Id: sun2-mainbus.c,v 1.18 2009/08/30 14:32:29 fredette Exp $");
 
 /* includes: */
 #include "sun2-impl.h"
+#include <tme/control.h>
 #include "../sun/sun-idprom.h"
 #include <tme/ic/am9513.h>
 #include <tme/ic/z8530.h>
@@ -408,6 +409,42 @@ _tme_sun2_command(struct tme_element *element, const char * const * args, char *
   return (TME_OK);
 }
 
+
+/* the controls: */
+static const struct tme_control_item _tme_sun2_control_items[] = {
+  { "Reset", TME_CONTROL_ITEM_ACTION },
+};
+
+/* this returns nonzero iff a control switch is on: */
+static int
+_tme_sun2_controls_get(struct tme_controls *controls, unsigned int item)
+{
+
+  /* the reset action has no state: */
+  return (FALSE);
+}
+
+/* this works a control, with the command that does the same: */
+static int
+_tme_sun2_controls_set(struct tme_controls *controls, unsigned int item,
+		       int value, char **_output)
+{
+  static const char * const commands[][2] = {
+    { "power", "up" },
+  };
+  const char *args[4];
+
+  args[0] = controls->tme_controls_name;
+  args[1] = commands[item][0];
+  args[2] = (commands[item][1] != NULL
+	     ? commands[item][1]
+	     : value
+	     ? "true"
+	     : "false");
+  args[3] = NULL;
+  return (_tme_sun2_command(controls->tme_controls_element, args, _output));
+}
+
 /* the connection scorer: */
 static int
 _tme_sun2_connection_score(struct tme_connection *conn, unsigned int *_score)
@@ -660,6 +697,7 @@ TME_ELEMENT_NEW_DECL(tme_machine_sun2) {
   tme_uint8_t idprom[TME_SUN_IDPROM_SIZE];
   int arg_i;
   int rc;
+  struct tme_controls *controls;
 
   arg_i = 1;
   usage = FALSE;
@@ -763,6 +801,15 @@ TME_ELEMENT_NEW_DECL(tme_machine_sun2) {
   element->tme_element_private = sun2;
   element->tme_element_connections_new = _tme_sun2_connections_new;
   element->tme_element_command = _tme_sun2_command;
+
+  /* register the controls: */
+  controls = tme_new0(struct tme_controls, 1);
+  controls->tme_controls_element = element;
+  controls->tme_controls_items = _tme_sun2_control_items;
+  controls->tme_controls_count = TME_ARRAY_ELS(_tme_sun2_control_items);
+  controls->tme_controls_get = _tme_sun2_controls_get;
+  controls->tme_controls_set = _tme_sun2_controls_set;
+  tme_controls_register(controls);
 
   return (TME_OK);
 }

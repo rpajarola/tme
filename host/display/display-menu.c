@@ -28,6 +28,7 @@
 /* includes: */
 #include "display.h"
 #include <tme/media.h>
+#include <tme/control.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -769,6 +770,116 @@ _tme_display_menu_media_update(struct tme_screen *screen)
   _tme_display_menu_changed(screen);
 }
 
+/* this is called for a Devices item: */
+static void
+_tme_display_menu_control(struct tme_screen *screen,
+			  struct tme_display_menu_item *item)
+{
+  struct tme_controls *controls;
+  unsigned int index;
+  char *output;
+  char message[512];
+  int rc;
+
+  controls = item->tme_display_menu_item_private;
+  index = item->tme_display_menu_item_value;
+  output = NULL;
+  rc = (*controls->tme_controls_set)(controls, index,
+				     item->tme_display_menu_item_checked,
+				     &output);
+  if (rc != TME_OK) {
+    snprintf(message, sizeof(message),
+	     _("Could not change %s %s: %s"),
+	     controls->tme_controls_name,
+	     controls->tme_controls_items[index].tme_control_item_label,
+	     ((output != NULL && output[0] != '\0')
+	      ? output
+	      : strerror(rc)));
+    _tme_display_error(screen, message);
+  }
+  else if (controls->tme_controls_items[index].tme_control_item_type
+	   == TME_CONTROL_ITEM_ACTION) {
+    _tme_display_message(screen, "%s: %s",
+			 controls->tme_controls_name,
+			 controls->tme_controls_items[index].tme_control_item_label);
+  }
+  if (output != NULL) {
+    tme_free(output);
+  }
+}
+
+/* this rebuilds the Devices menu if the controls have changed, and
+   checks the switch items that are on: */
+static void
+_tme_display_menu_devices_update(struct tme_screen *screen)
+{
+  struct tme_display_menus *menus;
+  struct tme_display_menu *menu;
+  struct tme_display_menu_item *item, *control_item;
+  struct tme_controls *controls;
+  unsigned int index;
+  unsigned long generation;
+  int on;
+
+  menus = screen->tme_screen_menus;
+  menu = menus->tme_display_menus_devices;
+  generation = tme_controls_generation();
+  if (generation != menus->tme_display_menus_devices_generation) {
+    menus->tme_display_menus_devices_generation = generation;
+    _tme_display_menu_clear(menu);
+    for (controls = tme_controls_list();
+	 controls != NULL;
+	 controls = controls->tme_controls_next) {
+
+      /* skip controls that haven't been named yet: */
+      if (controls->tme_controls_name == NULL) {
+	continue;
+      }
+      item = _tme_display_menu_append(menu, TME_DISPLAY_MENU_ITEM_SUBMENU,
+				      controls->tme_controls_name, NULL, NULL);
+      for (index = 0; index < controls->tme_controls_count; index++) {
+	control_item
+	  = _tme_display_menu_append(item->tme_display_menu_item_submenu,
+				     (controls->tme_controls_items[index].tme_control_item_type
+				      == TME_CONTROL_ITEM_SWITCH
+				      ? TME_DISPLAY_MENU_ITEM_CHECK
+				      : TME_DISPLAY_MENU_ITEM_ACTION),
+				     _(controls->tme_controls_items[index].tme_control_item_label),
+				     _tme_display_menu_control, controls);
+	control_item->tme_display_menu_item_value = index;
+      }
+    }
+    if (menu->tme_display_menu_items == NULL) {
+      item = _tme_display_menu_append(menu, TME_DISPLAY_MENU_ITEM_ACTION,
+				      _("No devices"), NULL, NULL);
+      item->tme_display_menu_item_enabled = FALSE;
+    }
+    _tme_display_menu_changed(screen);
+  }
+
+  /* switches can also be changed by commands, and by the machine: */
+  for (item = menu->tme_display_menu_items;
+       item != NULL;
+       item = item->tme_display_menu_item_next) {
+    if (item->tme_display_menu_item_submenu == NULL) {
+      continue;
+    }
+    for (control_item = item->tme_display_menu_item_submenu->tme_display_menu_items;
+	 control_item != NULL;
+	 control_item = control_item->tme_display_menu_item_next) {
+      if (control_item->tme_display_menu_item_type != TME_DISPLAY_MENU_ITEM_CHECK) {
+	continue;
+      }
+      controls = control_item->tme_display_menu_item_private;
+      on = ((*controls->tme_controls_get)(controls, control_item->tme_display_menu_item_value) != 0);
+      if (on != control_item->tme_display_menu_item_checked) {
+	control_item->tme_display_menu_item_checked = on;
+	_tme_display_menu_changed(screen);
+      }
+    }
+  }
+}
+
 /* this gives a screen the standard menus and a status line: */
 void
 _tme_display_menus_new(struct tme_screen *screen)
@@ -834,6 +945,13 @@ _tme_display_menus_new(struct tme_screen *screen)
   menus->tme_display_menus_media = item->tme_display_menu_item_submenu;
   menus->tme_display_menus_media_generation = tme_media_generation() - 1;
 
+  /* the Devices menu, filled in by _tme_display_menu_devices_update(): */
+  item = _tme_display_menu_append(menus->tme_display_menus_bar,
+				  TME_DISPLAY_MENU_ITEM_SUBMENU,
+				  _("Devices"), NULL, NULL);
+  menus->tme_display_menus_devices = item->tme_display_menu_item_submenu;
+  menus->tme_display_menus_devices_generation = tme_controls_generation() - 1;
+
   _tme_display_menus_update(screen);
 }
 
@@ -862,6 +980,7 @@ _tme_display_menus_update(struct tme_screen *screen)
     _tme_display_menu_changed(screen);
   }
   _tme_display_menu_media_update(screen);
+  _tme_display_menu_devices_update(screen);
 
   /* clear any status line slots that have expired: */
   now = _tme_display_event_time();

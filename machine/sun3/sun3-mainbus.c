@@ -38,6 +38,7 @@ _TME_RCSID("$Id: sun3-mainbus.c,v 1.7 2009/08/30 14:17:53 fredette Exp $");
 
 /* includes: */
 #include "sun3-impl.h"
+#include <tme/control.h>
 #include "../sun/sun-idprom.h"
 #include <tme/ic/z8530.h>
 #include <tme/ic/isil7170.h>
@@ -514,6 +515,55 @@ _tme_sun3_command(struct tme_element *element, const char * const * args, char *
   return (TME_OK);
 }
 
+
+/* the controls: */
+static const struct tme_control_item _tme_sun3_control_items[] = {
+  { "Reset", TME_CONTROL_ITEM_ACTION },
+  { "Diagnostic Switch", TME_CONTROL_ITEM_SWITCH },
+  { "Reset on Watchdog", TME_CONTROL_ITEM_SWITCH },
+};
+
+/* this returns nonzero iff a control switch is on: */
+static int
+_tme_sun3_controls_get(struct tme_controls *controls, unsigned int item)
+{
+  struct tme_sun3 *sun3;
+
+  sun3 = (struct tme_sun3 *) controls->tme_controls_element->tme_element_private;
+
+  switch (item) {
+  case 1:
+    return ((sun3->tme_sun3_enable & TME_SUN3_ENA_DIAG) != 0);
+  case 2:
+    return (sun3->tme_sun3_watchdog_reset);
+  default:
+    return (FALSE);
+  }
+}
+
+/* this works a control, with the command that does the same: */
+static int
+_tme_sun3_controls_set(struct tme_controls *controls, unsigned int item,
+		       int value, char **_output)
+{
+  static const char * const commands[][2] = {
+    { "power", "up" },
+    { "diag-switch", NULL },
+    { "watchdog-reset", NULL },
+  };
+  const char *args[4];
+
+  args[0] = controls->tme_controls_name;
+  args[1] = commands[item][0];
+  args[2] = (commands[item][1] != NULL
+	     ? commands[item][1]
+	     : value
+	     ? "true"
+	     : "false");
+  args[3] = NULL;
+  return (_tme_sun3_command(controls->tme_controls_element, args, _output));
+}
+
 /* the connection scorer: */
 static int
 _tme_sun3_connection_score(struct tme_connection *conn, unsigned int *_score)
@@ -800,6 +850,7 @@ TME_ELEMENT_NEW_DECL(tme_machine_sun3) {
   tme_uint8_t idprom[TME_SUN_IDPROM_SIZE];
   int arg_i;
   int rc;
+  struct tme_controls *controls;
 
   arg_i = 1;
   usage = FALSE;
@@ -894,6 +945,15 @@ TME_ELEMENT_NEW_DECL(tme_machine_sun3) {
   element->tme_element_private = sun3;
   element->tme_element_connections_new = _tme_sun3_connections_new;
   element->tme_element_command = _tme_sun3_command;
+
+  /* register the controls: */
+  controls = tme_new0(struct tme_controls, 1);
+  controls->tme_controls_element = element;
+  controls->tme_controls_items = _tme_sun3_control_items;
+  controls->tme_controls_count = TME_ARRAY_ELS(_tme_sun3_control_items);
+  controls->tme_controls_get = _tme_sun3_controls_get;
+  controls->tme_controls_set = _tme_sun3_controls_set;
+  tme_controls_register(controls);
 
   return (TME_OK);
 }

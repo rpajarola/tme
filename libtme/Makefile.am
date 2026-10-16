@@ -29,6 +29,7 @@ libtme_la_SOURCES = misc-host.c \
 	threads.c \
 	element.c \
 	media.c \
+	control.c \
 	log.c \
 	hash.c \
 	token.c \

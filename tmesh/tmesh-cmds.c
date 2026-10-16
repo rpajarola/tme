@@ -39,6 +39,7 @@ _TME_RCSID("$Id: tmesh-cmds.c,v 1.6 2006/11/15 23:12:30 fredette Exp $");
 /* includes: */
 #include <tme/threads.h>
 #include <tme/media.h>
+#include <tme/control.h>
 #include <stdlib.h>
 #include "tmesh-impl.h"
 
@@ -605,11 +606,14 @@ _tmesh_command_connect(struct tmesh *tmesh, struct tmesh_parser_value *value, ch
       return (rc);
     }
 
-    /* tell any media holder its name, for a user interface: */
+    /* tell any media holder or controls its name, for a user
+       interface: */
     pathname = NULL;
     _tmesh_fs_pathname_element(element0, &pathname, NULL);
     tme_media_name(&element0->tmesh_fs_element_element,
 		   (pathname[0] == '/' ? pathname + 1 : pathname));
+    tme_controls_name(&element0->tmesh_fs_element_element,
+		      (pathname[0] == '/' ? pathname + 1 : pathname));
     tme_free(pathname);
 
     /* the creation succeeded.  set the generation number and preserve

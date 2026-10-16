@@ -508,7 +508,8 @@ The SDL display draws its own menu bar above the emulated screen and a
 status line below it, so the window looks the same on every host.  The
 menus have the same items as the GTK display's: the Screen menu
 scales the screen, saves screenshots and recordings (@pxref{GTK}), and
-quits, and the Media menu loads and ejects removable media.  When the
+quits, the Media menu loads and ejects removable media, and the
+Devices menu works the machine's controls (@pxref{GTK}).  When the
 mouse isn't being used by the emulated machine, click a menu to open
 it; F10 opens the menus from the keyboard, and the arrow keys, Return
 and Escape use them.  To load media, the SDL display runs the
@@ -527,6 +528,12 @@ cooperative threads.
 TME supports version 3 of GTK+. You can create a frontend with a GTK
 interface by invoking the appropriate line in the configuration file.
 See examples in the machines directory for details.
+
+The Devices menu has the controls of the emulated machine, under its
+name, like @samp{mainbus0}: Reset, which resets the machine like
+@samp{command mainbus0 power up}, and on the Sun-3 and Sun-4, the
+Diagnostic Switch, and on the Sun-3, Reset on Watchdog, which are the
+@samp{diag-switch} and @samp{watchdog-reset} commands.
 
 The Screen menu can save a screenshot of the emulated display as a
 PNG file, and record it as an MP4 file, at the emulated framebuffer's
