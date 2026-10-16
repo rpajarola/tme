@@ -34,8 +34,7 @@
 #include <tme/common.h>
 
 /* includes: */
-#include "display.h"
-#include <SDL.h>
+#include "sdl-display.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -65,54 +64,15 @@
 #define TME_SDL_KMOD_PRIMARY		KMOD_CTRL
 #endif
 
+/* the height of the menu bar and the status line together, in
+   logical pixels, for picking the default scaling: */
+#define TME_SDL_BARS_HEIGHT		(2 * (16 + 6))
+
 /* the bell: */
 #define TME_SDL_BELL_RATE		(22050)
 #define TME_SDL_BELL_HZ			(880)
 #define TME_SDL_BELL_MSEC		(100)
 #define TME_SDL_BELL_VOLUME		(4000)
-
-/* types: */
-
-/* a display: */
-struct tme_sdl_display {
-
-  /* the generic display structure: */
-  struct tme_display display;
-
-  /* nonzero iff mouse mode is on, and the pointer is captured: */
-  int tme_sdl_display_mouse_on;
-
-  /* the modifier keys being held down, for the key combination
-     that turns mouse mode off: */
-  unsigned int tme_sdl_display_mouse_mods;
-
-  /* the keysym that each key pressed down sent, so that its release
-     sends the same keysym, or TME_KEYBOARD_KEYVAL_UNDEF: */
-  tme_keyboard_keyval_t tme_sdl_display_keys_down[SDL_NUM_SCANCODES];
-
-  /* the audio device for the bell, if it has been opened: */
-  SDL_AudioDeviceID tme_sdl_display_bell_device;
-  int tme_sdl_display_bell_failed;
-};
-
-/* a screen: */
-struct tme_sdl_screen {
-
-  /* the generic screen structure: */
-  struct tme_screen screen;
-
-  /* the window, its renderer, and the texture that holds the
-     framebuffer: */
-  SDL_Window *tme_sdl_screen_window;
-  SDL_Renderer *tme_sdl_screen_renderer;
-  SDL_Texture *tme_sdl_screen_texture;
-  int tme_sdl_screen_texture_width;
-  int tme_sdl_screen_texture_height;
-
-  /* the framebuffer translation writes here: */
-  tme_uint32_t *tme_sdl_screen_pixels;
-  size_t tme_sdl_screen_pixels_size;
-};
 
 /* the keysyms for the SDL keys that don't type characters.  as with
    the GTK display, Cmd is Meta on macOS: */
@@ -222,10 +182,6 @@ static const struct {
 static const char _tme_sdl_us_unshifted[] = "1234567890-=[]\\;',./`";
 static const char _tme_sdl_us_shifted[]   = "!@#$%^&*()_+{}|:\"<>?~";
 
-/* this returns the display for a screen: */
-#define _tme_sdl_screen_display(screen) \
-  ((struct tme_sdl_display *) (screen)->screen.tme_screen_display)
-
 /* this logs an SDL error: */
 static void
 _tme_sdl_log_error(struct tme_display *display, const char *what)
@@ -247,33 +203,20 @@ _tme_sdl_screen_from_id(Uint32 window_id)
 	  : (struct tme_sdl_screen *) SDL_GetWindowData(window, "tme"));
 }
 
-/* this sets a screen's title, which also says what to do with the
-   mouse: */
+/* this shows what to do with the mouse in the status lines: */
 static void
-_tme_sdl_screen_title(struct tme_sdl_screen *screen)
-{
-  struct tme_sdl_display *display;
-  char title[sizeof(display->display.tme_display_title) + 64];
-
-  display = _tme_sdl_screen_display(screen);
-  snprintf(title, sizeof(title), "%s - %s",
-	   display->display.tme_display_title,
-	   (display->tme_sdl_display_mouse_on
-	    ? _("Press " TME_SDL_MOUSE_OFF_KEYS " to release the mouse")
-	    : _("Click in the screen to use the mouse")));
-  SDL_SetWindowTitle(screen->tme_sdl_screen_window, title);
-}
-
-/* this sets the titles of all screens: */
-static void
-_tme_sdl_display_titles(struct tme_sdl_display *display)
+_tme_sdl_display_mouse_hint(struct tme_sdl_display *display)
 {
   struct tme_screen *screen;
 
   for (screen = display->display.tme_display_screens;
        screen != NULL;
        screen = screen->tme_screen_next) {
-    _tme_sdl_screen_title((struct tme_sdl_screen *) screen);
+    _tme_display_status_set(screen, TME_DISPLAY_STATUS_MOUSE,
+			    (display->tme_sdl_display_mouse_on
+			     ? _("Press " TME_SDL_MOUSE_OFF_KEYS " to release the mouse")
+			     : _("Click in the screen to use the mouse, F10 for the menus")),
+			    0);
   }
 }
 
@@ -286,11 +229,11 @@ _tme_sdl_mouse_mode_on(struct tme_sdl_display *display)
     return;
   }
   display->tme_sdl_display_mouse_on = TRUE;
-  _tme_sdl_display_titles(display);
+  _tme_sdl_display_mouse_hint(display);
 }
 
 /* this turns mouse mode off: */
-static void
+void
 _tme_sdl_mouse_mode_off(struct tme_sdl_display *display)
 {
   if (!display->tme_sdl_display_mouse_on) {
@@ -298,7 +241,7 @@ _tme_sdl_mouse_mode_off(struct tme_sdl_display *display)
   }
   SDL_SetRelativeMouseMode(SDL_FALSE);
   display->tme_sdl_display_mouse_on = FALSE;
-  _tme_sdl_display_titles(display);
+  _tme_sdl_display_mouse_hint(display);
 }
 
 /* this turns mouse mode off when the key combination for that is
@@ -354,11 +297,20 @@ static void
 _tme_sdl_mouse_event(struct tme_sdl_display *display,
 		     const SDL_Event *event)
 {
+  struct tme_sdl_screen *screen;
   int x, y, button;
 
-  /* if mouse mode is off, a click in the screen turns it on.  the
-     click itself isn't passed on: */
+  /* if mouse mode is off, the mouse works the menus, and a click in
+     the screen turns mouse mode on.  the click itself isn't passed
+     on: */
   if (!display->tme_sdl_display_mouse_on) {
+    screen = _tme_sdl_screen_from_id(event->type == SDL_MOUSEMOTION
+				     ? event->motion.windowID
+				     : event->button.windowID);
+    if (screen != NULL
+	&& _tme_sdl_menu_mouse_event(screen, event)) {
+      return;
+    }
     if (event->type == SDL_MOUSEBUTTONDOWN) {
       _tme_sdl_mouse_mode_on(display);
     }
@@ -475,7 +427,7 @@ _tme_sdl_key_keysym(const SDL_KeyboardEvent *event)
 
 /* this releases all keys held down, for when the window loses the
    focus and won't see their releases: */
-static void
+void
 _tme_sdl_keys_release(struct tme_sdl_display *display)
 {
   unsigned int scancode;
@@ -520,6 +472,28 @@ _tme_sdl_display_quit(struct tme_sdl_display *display,
   }
 }
 
+/* this asks whether to quit, for the Quit menu item: */
+static void
+_tme_sdl_screen_quit(struct tme_screen *screen)
+{
+  _tme_sdl_display_quit((struct tme_sdl_display *) screen->tme_screen_display,
+			((struct tme_sdl_screen *) screen)->tme_sdl_screen_window);
+}
+
+/* this shows an error: */
+static void
+_tme_sdl_screen_error(struct tme_screen *screen, const char *text)
+{
+  _tme_sdl_mouse_mode_off((struct tme_sdl_display *) screen->tme_screen_display);
+  _tme_sdl_keys_release((struct tme_sdl_display *) screen->tme_screen_display);
+  if (SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
+			       PACKAGE_STRING,
+			       text,
+			       ((struct tme_sdl_screen *) screen)->tme_sdl_screen_window) != 0) {
+    _tme_display_message(screen, "%s", text);
+  }
+}
+
 /* this handles a key press or release: */
 static void
 _tme_sdl_key_event(struct tme_sdl_display *display,
@@ -528,6 +502,7 @@ _tme_sdl_key_event(struct tme_sdl_display *display,
   const SDL_KeyboardEvent *key;
   SDL_Scancode scancode;
   tme_keyboard_keyval_t keysym;
+  struct tme_sdl_screen *screen;
 
   key = &event->key;
   scancode = key->keysym.scancode;
@@ -542,6 +517,14 @@ _tme_sdl_key_event(struct tme_sdl_display *display,
     if (event->type == SDL_KEYDOWN && !key->repeat) {
       _tme_sdl_display_quit(display, SDL_GetWindowFromID(key->windowID));
     }
+    return;
+  }
+
+  /* F10 opens the menus, and the menus take all keys while they're
+     open.  the keys are released when the menus open: */
+  screen = _tme_sdl_screen_from_id(key->windowID);
+  if (screen != NULL
+      && _tme_sdl_menu_key_event(screen, event)) {
     return;
   }
 
@@ -573,17 +556,26 @@ _tme_sdl_key_event(struct tme_sdl_display *display,
   _tme_keyboard_key_press(TRUE, keysym, &display->display);
 }
 
-/* this shows a screen's framebuffer: */
-static void
+/* this shows a screen's framebuffer, between the menu bar and the
+   status line, and any open menus over it: */
+void
 _tme_sdl_screen_present(struct tme_sdl_screen *screen)
 {
+  SDL_Rect rect;
+
   if (screen->tme_sdl_screen_texture == NULL) {
     return;
   }
+  SDL_SetRenderDrawColor(screen->tme_sdl_screen_renderer, 0, 0, 0, 255);
   SDL_RenderClear(screen->tme_sdl_screen_renderer);
+  rect.x = 0;
+  rect.y = screen->tme_sdl_screen_bar_height;
+  rect.w = screen->tme_sdl_screen_texture_width;
+  rect.h = screen->tme_sdl_screen_texture_height;
   SDL_RenderCopy(screen->tme_sdl_screen_renderer,
 		 screen->tme_sdl_screen_texture,
-		 NULL, NULL);
+		 NULL, &rect);
+  _tme_sdl_menu_draw(screen);
   SDL_RenderPresent(screen->tme_sdl_screen_renderer);
 }
 
@@ -628,9 +620,24 @@ static int
 _tme_sdl_display_update(struct tme_display *_display)
 {
   struct tme_sdl_display *display;
+  struct tme_screen *screen;
+  struct tme_display_menus *menus;
   SDL_Event event;
 
   display = (struct tme_sdl_display *) _display;
+
+  /* give new screens their menus and status lines: */
+  for (screen = display->display.tme_display_screens;
+       screen != NULL;
+       screen = screen->tme_screen_next) {
+    if (screen->tme_screen_menus == NULL) {
+      _tme_display_menus_new(screen);
+      _tme_sdl_display_mouse_hint(display);
+    }
+  }
+
+  /* check on any file chooser: */
+  _tme_sdl_files_poll(display);
 
   while (SDL_PollEvent(&event)) {
     switch (event.type) {
@@ -659,6 +666,19 @@ _tme_sdl_display_update(struct tme_display *_display)
     case SDL_TEXTINPUT:
     default:
       break;
+    }
+  }
+
+  /* draw the menus and status lines again if they have changed: */
+  for (screen = display->display.tme_display_screens;
+       screen != NULL;
+       screen = screen->tme_screen_next) {
+    menus = screen->tme_screen_menus;
+    if (menus->tme_display_menus_generation
+	!= ((struct tme_sdl_screen *) screen)->tme_sdl_screen_menus_drawn
+	|| menus->tme_display_menus_status_generation
+	!= ((struct tme_sdl_screen *) screen)->tme_sdl_screen_status_drawn) {
+      _tme_sdl_screen_present((struct tme_sdl_screen *) screen);
     }
   }
   return (TME_OK);
@@ -795,11 +815,13 @@ _tme_sdl_screen_resize(struct tme_screen *_screen)
   }
 
   /* the framebuffer is in device pixels, and the window size is in
-     logical ones: */
+     logical ones.  the window also has the menu bar and the status
+     line: */
   device_scale = screen->screen.tme_screen_scale;
   SDL_SetWindowSize(screen->tme_sdl_screen_window,
 		    (width + device_scale - 1) / device_scale,
-		    (height_visible + device_scale - 1) / device_scale);
+		    (height_visible + 2 * screen->tme_sdl_screen_bar_height
+		     + device_scale - 1) / device_scale);
   SDL_ShowWindow(screen->tme_sdl_screen_window);
   return (TME_OK);
 }
@@ -867,7 +889,9 @@ _tme_sdl_screen_new(struct tme_display *_display,
     screen->screen.tme_screen_scale = output_width / window_width;
   }
 
-  _tme_sdl_screen_title(screen);
+  /* make the font for the menus and the status line, for the device
+     scale: */
+  _tme_sdl_menu_init(screen);
   return (&screen->screen);
 }
 
@@ -925,7 +949,7 @@ TME_ELEMENT_SUB_NEW_DECL(tme_host_sdl,display) {
       && bounds.w > 0
       && bounds.h > 0) {
     display->display.tme_screen_width = bounds.w;
-    display->display.tme_screen_height = bounds.h;
+    display->display.tme_screen_height = TME_MAX(bounds.h - TME_SDL_BARS_HEIGHT, 1);
   }
 
   /* set the display-specific functions: */
@@ -934,6 +958,9 @@ TME_ELEMENT_SUB_NEW_DECL(tme_host_sdl,display) {
   display->display.tme_screen_add = _tme_sdl_screen_new;
   display->display.tme_screen_resize = _tme_sdl_screen_resize;
   display->display.tme_screen_redraw = _tme_sdl_screen_redraw;
+  display->display.tme_screen_quit = _tme_sdl_screen_quit;
+  display->display.tme_screen_error = _tme_sdl_screen_error;
+  _tme_sdl_files_init(display);
 
   return (TME_OK);
 }
