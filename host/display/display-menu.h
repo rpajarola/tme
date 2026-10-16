@@ -164,6 +164,12 @@ struct tme_display_menu_item *_tme_display_menu_append _TME_P((struct tme_displa
 							       const char *,
 							       tme_display_menu_func,
 							       void *));
+struct tme_display_menu_item *_tme_display_menu_insert _TME_P((struct tme_display_menu *,
+							       struct tme_display_menu_item *,
+							       unsigned int,
+							       const char *,
+							       tme_display_menu_func,
+							       void *));
 void _tme_display_menu_activate _TME_P((struct tme_screen *,
 					struct tme_display_menu_item *));
 void _tme_display_menu_changed _TME_P((struct tme_screen *));
