@@ -769,10 +769,11 @@ if test "x$PKG_CONFIG" = x; then
   AC_MSG_ERROR([pkg-config not found: install pkg-config (or pkgconf)])
 fi
 
-dnl Checks for GLIB.
-PKG_CHECK_MODULES([GLIB], [glib-2.0], [],
-  [AC_MSG_ERROR([GLIB not found: install GLIB 2 (glib-2.0)])])
-AC_DEFINE(HAVE_GLIB, [], [Define if you are compiling with GLIB.])
+dnl Checks for GLIB, which only the GLIB threads need:
+PKG_CHECK_MODULES([GLIB], [glib-2.0],
+  [have_glib=yes
+   AC_DEFINE(HAVE_GLIB, [], [Define if you are compiling with GLIB.])],
+  [have_glib=no])
 
 TME_FB_XLAT_DST=
 # if --with-tme-host-displays is given, characterize those given displays:
@@ -788,9 +789,13 @@ for tme_host_type in ${tme_host_types}; do
     eval enable_${tme_host_type}=no
 done
 
+dnl by default, the GTK and SDL displays are each built if what they
+dnl need is found.  hosts listed with --enable-hosts must be found:
+tme_hosts_given=no
 AC_ARG_ENABLE(hosts,
-[  --enable-hosts=hosttypes         enable hosts (default="${tme_host_types}")],
-   [tme_host_types=${enableval}], [enable_hosts=yes])
+[  --enable-hosts=hosttypes         enable hosts (default="${tme_host_types}",
+                                   with gtk and sdl only if found)],
+   [tme_host_types=${enableval}; tme_hosts_given=yes], [enable_hosts=yes])
 
 if test "x${enable_hosts}" = xno; then
    tme_host_types=
@@ -807,7 +812,13 @@ TME_FB_XLAT_DST="d32b32s0p32olml_r0xffff0000_g0xff00ff00_b0xff0000ff d24b32s0p32
 dnl Checks for GTK.
 if test "x${enable_gtk}" = xyes; then
    PKG_CHECK_MODULES([GTK], [gtk+-3.0], [],
-     [AC_MSG_ERROR([GTK not found: install GTK 3 (gtk+-3.0), or leave gtk out of --enable-hosts])])
+     [if test "x${tme_hosts_given}" = xyes; then
+	AC_MSG_ERROR([GTK not found: install GTK 3 (gtk+-3.0), or leave gtk out of --enable-hosts])
+      fi
+      AC_MSG_WARN([GTK 3 (gtk+-3.0) not found, so the GTK display won't be built])
+      enable_gtk=no])
+fi
+if test "x${enable_gtk}" = xyes; then
    TME_DISPLAY_HOSTS="gtk ${TME_DISPLAY_HOSTS}"
    dnl with GDK's Quartz backend, the GTK display also calls
    dnl CoreGraphics.  GTK_LIBS has it as -Wl,-framework,CoreGraphics,
@@ -822,8 +833,17 @@ fi
 dnl Checks for SDL.
 if test "x${enable_sdl}" = xyes; then
    PKG_CHECK_MODULES([SDL], [sdl2], [],
-     [AC_MSG_ERROR([SDL not found: install SDL 2 (sdl2), or leave sdl out of --enable-hosts])])
+     [if test "x${tme_hosts_given}" = xyes; then
+	AC_MSG_ERROR([SDL not found: install SDL 2 (sdl2), or leave sdl out of --enable-hosts])
+      fi
+      AC_MSG_WARN([SDL 2 (sdl2) not found, so the SDL display won't be built])
+      enable_sdl=no])
+fi
+if test "x${enable_sdl}" = xyes; then
    TME_DISPLAY_HOSTS="sdl ${TME_DISPLAY_HOSTS}"
+fi
+if test "x${enable_gtk}${enable_sdl}" = xnono; then
+   AC_MSG_WARN([neither GTK 3 nor SDL 2 was found, so there will be no display for emulated screens])
 fi
 
 have_rfb=no
@@ -985,7 +1005,10 @@ case "x${tme_thread_type}" in
 xpthreads| xposix)  CPPFLAGS="${CPPFLAGS-} -DTME_THREADS_POSIX"
 #	  	    CFLAGS="${CFLAGS-} -pthread"
 		     ;;
-xglib)   CPPFLAGS="${CPPFLAGS-} -DTME_THREADS_GLIB -DUSE_GLIB_TIME ${GLIB_CFLAGS}"
+xglib)   if test "x${have_glib}" != xyes; then
+	   AC_MSG_ERROR([GLIB threads need GLIB: install GLIB 2 (glib-2.0)])
+	 fi
+	 CPPFLAGS="${CPPFLAGS-} -DTME_THREADS_GLIB -DUSE_GLIB_TIME ${GLIB_CFLAGS}"
 #	 LDFLAGS="${LDFLAGS-} ${GLIB_LIBS}"
 	 ;;
 xsjlj)   CPPFLAGS="${CPPFLAGS-} -DTME_THREADS_SJLJ"

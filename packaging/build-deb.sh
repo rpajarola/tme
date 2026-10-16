@@ -21,7 +21,9 @@ ARCH="${ARCH:-$(dpkg --print-architecture)}"
 if [ ! -x configure ]; then
   autoreconf -fi
 fi
-./configure --prefix=/usr --sysconfdir=/etc
+# The package has both the GTK and the SDL displays, so configure must
+# find them, instead of leaving out one that it doesn't find:
+./configure --prefix=/usr --sysconfdir=/etc --enable-hosts="gtk rfb sdl tun bsd udp"
 make -j"$(nproc)"
 rm -rf dist/stage
 make install DESTDIR="$PWD/dist/stage"

@@ -109,6 +109,8 @@ cgthree0 at vme0 addr 0xff400000 ipl 4: tme/machine/sun3/cgtwo type sun3
 # uncomment which display you want
 # uncomment this line for a GTK-based graphics display
 #display0: tme/host/gtk/display
+# uncomment this line for an SDL-based graphics display
+#display0: tme/host/sdl/display
 # uncomment this line for a VNC-based graphics display
 #display0: tme/host/rfb/display
 display0 at bwtwo0

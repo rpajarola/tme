@@ -73,7 +73,7 @@ Debian or Ubuntu:
 
 ```
 sudo apt install build-essential autoconf automake libtool libltdl-dev pkg-config \
-  bison texinfo libgtk-3-dev libsdl2-dev dpkg-dev
+  bison texinfo libgtk-3-dev libsdl2-dev zlib1g-dev dpkg-dev
 packaging/build-deb.sh      # dist/tme-rp_<version>_<arch>.deb
 ```
 

@@ -37,8 +37,13 @@ If building from source, you must have certain packages installed on your host p
 
 At a minimum, if not already installed, you should install these packages (latest versions should work) -
 1. bison (only when building from git; release tarballs include the generated parser)
-2. GTK+3 and SDL2
+2. SDL2 and/or GTK+3, for the graphics displays.  configure builds the
+   display for each of them that it finds.  Both have the same menus for
+   scaling, screenshots, recordings and removable media; machines choose
+   one with display0: tme/host/sdl/display or tme/host/gtk/display.
 3. pkg-config
+4. zlib (optional), to compress screenshots, and ffmpeg (optional, at
+   run time), to record the screen
 
 Obtaining:
 Source tarballs (tme-$version.tar.gz, with configure already generated, so no autotools or bison are needed) are attached to each release at https://github.com/rpajarola/tme/releases.
