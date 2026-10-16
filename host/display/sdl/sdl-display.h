@@ -35,8 +35,21 @@
 
 /* macros: */
 
+/* the colors: */
+#define TME_SDL_COLOR_BAR		(0xe4e4e4)
+#define TME_SDL_COLOR_MENU		(0xf6f6f6)
+#define TME_SDL_COLOR_TEXT		(0x000000)
+#define TME_SDL_COLOR_DISABLED		(0x8c8c8c)
+#define TME_SDL_COLOR_HIGHLIGHT		(0x2f5fb3)
+#define TME_SDL_COLOR_HIGHLIGHT_TEXT	(0xffffff)
+#define TME_SDL_COLOR_BORDER		(0x8a8a8a)
+#define TME_SDL_COLOR_SEPARATOR		(0xc8c8c8)
+
 /* how deep menus can be open: */
 #define TME_SDL_MENU_DEPTH		(4)
+
+/* the most buttons a dialog can have: */
+#define TME_SDL_DIALOG_BUTTONS		(3)
 
 /* types: */
 
@@ -54,6 +67,34 @@ struct tme_sdl_files {
   /* the screen and the request: */
   struct tme_screen *tme_sdl_files_screen;
   struct tme_display_files_request *tme_sdl_files_request;
+};
+
+struct tme_sdl_screen;
+
+/* a dialog, drawn in a screen's window over everything else.  the
+   emulated machine keeps running while it is open: */
+struct tme_sdl_dialog {
+
+  /* the next dialog to show after this one: */
+  struct tme_sdl_dialog *tme_sdl_dialog_next;
+
+  /* the title and the message: */
+  char *tme_sdl_dialog_title;
+  char *tme_sdl_dialog_text;
+
+  /* the buttons, left to right, the one Return presses, the one
+     Escape presses, and the highlighted one: */
+  const char *tme_sdl_dialog_buttons[TME_SDL_DIALOG_BUTTONS];
+  int tme_sdl_dialog_button_count;
+  int tme_sdl_dialog_button_default;
+  int tme_sdl_dialog_button_cancel;
+  int tme_sdl_dialog_button_highlight;
+
+  /* the button pressed down with the mouse, or -1: */
+  int tme_sdl_dialog_button_pressed;
+
+  /* the function called with the button chosen: */
+  void (*tme_sdl_dialog_done) _TME_P((struct tme_sdl_screen *, int));
 };
 
 /* a display: */
@@ -121,6 +162,9 @@ struct tme_sdl_screen {
   int tme_sdl_screen_menu_opener[TME_SDL_MENU_DEPTH];
   int tme_sdl_screen_menu_highlight[TME_SDL_MENU_DEPTH];
   int tme_sdl_screen_menu_press_opened;
+
+  /* the dialogs to show, the first one showing: */
+  struct tme_sdl_dialog *tme_sdl_screen_dialogs;
 };
 
 /* this returns the display for a screen: */
@@ -136,6 +180,20 @@ void _tme_sdl_menu_draw _TME_P((struct tme_sdl_screen *));
 int _tme_sdl_menu_mouse_event _TME_P((struct tme_sdl_screen *, const SDL_Event *));
 int _tme_sdl_menu_key_event _TME_P((struct tme_sdl_screen *, const SDL_Event *));
 int _tme_sdl_menu_open _TME_P((struct tme_sdl_screen *));
+void _tme_sdl_fill _TME_P((struct tme_sdl_screen *, int, int, int, int, Uint32));
+int _tme_sdl_text_next _TME_P((const char **));
+int _tme_sdl_text_length _TME_P((const char *));
+void _tme_sdl_text_draw _TME_P((struct tme_sdl_screen *, int, int, const char *, Uint32, int));
+void _tme_sdl_output_size _TME_P((struct tme_sdl_screen *, int *, int *));
+int _tme_sdl_menu_border _TME_P((struct tme_sdl_screen *));
+void _tme_sdl_dialog_open _TME_P((struct tme_sdl_screen *, const char *, const char *,
+				  const char * const *, int, int, int,
+				  void (*) _TME_P((struct tme_sdl_screen *, int))));
+int _tme_sdl_dialog_find _TME_P((struct tme_sdl_screen *,
+				 void (*) _TME_P((struct tme_sdl_screen *, int))));
+void _tme_sdl_dialog_draw _TME_P((struct tme_sdl_screen *));
+void _tme_sdl_dialog_mouse_event _TME_P((struct tme_sdl_screen *, const SDL_Event *, int, int));
+void _tme_sdl_dialog_key_event _TME_P((struct tme_sdl_screen *, const SDL_Event *));
 int _tme_sdl_files_init _TME_P((struct tme_sdl_display *));
 void _tme_sdl_files_poll _TME_P((struct tme_sdl_display *));
 

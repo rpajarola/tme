@@ -443,32 +443,35 @@ _tme_sdl_keys_release(struct tme_sdl_display *display)
   display->tme_sdl_display_mouse_mods = 0;
 }
 
-/* this asks whether to quit the emulator.  SDL's message box is
-   modal, so the emulated machine waits while it is up: */
+/* this is called when the quit dialog is answered: */
+static void
+_tme_sdl_display_quit_done(struct tme_sdl_screen *screen, int button)
+{
+  if (button == 1) {
+    exit(0);
+  }
+}
+
+/* this asks whether to quit the emulator, in a screen's window, or the
+   first screen's if screen is NULL: */
 static void
 _tme_sdl_display_quit(struct tme_sdl_display *display,
-		      SDL_Window *window)
+		      struct tme_sdl_screen *screen)
 {
-  static const SDL_MessageBoxButtonData buttons[] = {
-    { SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, 0, "Cancel" },
-    { SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, 1, "Quit" },
-  };
-  SDL_MessageBoxData box;
-  int button;
+  static const char * const buttons[] = { "Cancel", "Quit" };
 
-  _tme_sdl_mouse_mode_off(display);
-  _tme_sdl_keys_release(display);
-
-  memset(&box, 0, sizeof(box));
-  box.flags = SDL_MESSAGEBOX_INFORMATION;
-  box.window = window;
-  box.title = _("Quit the emulator?");
-  box.message = _("The emulated machine will stop immediately.");
-  box.numbuttons = TME_ARRAY_ELS(buttons);
-  box.buttons = buttons;
-  if (SDL_ShowMessageBox(&box, &button) == 0
-      && button == 1) {
-    exit(0);
+  if (screen == NULL) {
+    screen = (struct tme_sdl_screen *) display->display.tme_display_screens;
+    if (screen == NULL) {
+      exit(0);
+    }
+  }
+  if (!_tme_sdl_dialog_find(screen, _tme_sdl_display_quit_done)) {
+    _tme_sdl_dialog_open(screen,
+			 _("Quit the emulator?"),
+			 _("The emulated machine will stop immediately."),
+			 buttons, TME_ARRAY_ELS(buttons), 1, 0,
+			 _tme_sdl_display_quit_done);
   }
 }
 
@@ -477,21 +480,19 @@ static void
 _tme_sdl_screen_quit(struct tme_screen *screen)
 {
   _tme_sdl_display_quit((struct tme_sdl_display *) screen->tme_screen_display,
-			((struct tme_sdl_screen *) screen)->tme_sdl_screen_window);
+			(struct tme_sdl_screen *) screen);
 }
 
 /* this shows an error: */
 static void
 _tme_sdl_screen_error(struct tme_screen *screen, const char *text)
 {
-  _tme_sdl_mouse_mode_off((struct tme_sdl_display *) screen->tme_screen_display);
-  _tme_sdl_keys_release((struct tme_sdl_display *) screen->tme_screen_display);
-  if (SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
-			       PACKAGE_STRING,
-			       text,
-			       ((struct tme_sdl_screen *) screen)->tme_sdl_screen_window) != 0) {
-    _tme_display_message(screen, "%s", text);
-  }
+  static const char * const buttons[] = { "OK" };
+
+  _tme_sdl_dialog_open((struct tme_sdl_screen *) screen,
+		       _("Error"), text,
+		       buttons, TME_ARRAY_ELS(buttons), 0, 0,
+		       NULL);
 }
 
 /* this handles a key press or release: */
@@ -515,7 +516,7 @@ _tme_sdl_key_event(struct tme_sdl_display *display,
   if (key->keysym.sym == SDLK_q
       && (key->keysym.mod & TME_SDL_KMOD_PRIMARY)) {
     if (event->type == SDL_KEYDOWN && !key->repeat) {
-      _tme_sdl_display_quit(display, SDL_GetWindowFromID(key->windowID));
+      _tme_sdl_display_quit(display, _tme_sdl_screen_from_id(key->windowID));
     }
     return;
   }
@@ -605,8 +606,7 @@ _tme_sdl_window_event(struct tme_sdl_display *display,
 
   /* closing the window quits the emulator, after asking: */
   case SDL_WINDOWEVENT_CLOSE:
-    _tme_sdl_display_quit(display,
-			  (screen != NULL ? screen->tme_sdl_screen_window : NULL));
+    _tme_sdl_display_quit(display, screen);
     break;
 
   default:
