@@ -56,24 +56,17 @@ static int
 _tme_gtk_display_update(struct tme_display *display) {
   struct tme_screen *screen;
 
-  while (gtk_events_pending ())
-    gtk_main_iteration ();
-
-  /* update the media menus and status, if the media have changed: */
+  /* bring the menus up to date before handling events, since the
+     menu items refer to the shared menus as they are now: */
   for (screen = display->tme_display_screens;
        screen != NULL;
        screen = screen->tme_screen_next) {
-    _tme_gtk_media_update((struct tme_gtk_screen *) screen);
-
-    /* the Record item shows whether the screen is being recorded,
-       which commands can change: */
-    if (((struct tme_gtk_screen *) screen)->tme_gtk_screen_record_item != NULL
-	&& (gtk_check_menu_item_get_active(GTK_CHECK_MENU_ITEM(((struct tme_gtk_screen *) screen)->tme_gtk_screen_record_item))
-	    != _tme_display_recording(screen))) {
-      gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(((struct tme_gtk_screen *) screen)->tme_gtk_screen_record_item),
-				     _tme_display_recording(screen));
-    }
+    _tme_gtk_menu_update((struct tme_gtk_screen *) screen);
   }
+
+  while (gtk_events_pending ())
+    gtk_main_iteration ();
+
   return TME_OK;
 }
 
@@ -91,10 +84,12 @@ _tme_gtk_screen_quit_response(GtkDialog *dialog,
 
 /* this asks whether to quit the emulator: */
 static void
-_tme_gtk_screen_quit(struct tme_gtk_screen *screen)
+_tme_gtk_screen_quit(struct tme_screen *_screen)
 {
+  struct tme_gtk_screen *screen;
   GtkWidget *dialog;
 
+  screen = (struct tme_gtk_screen *) _screen;
   dialog
     = gtk_message_dialog_new(GTK_WINDOW(screen->tme_gtk_screen_window),
 			     GTK_DIALOG_DESTROY_WITH_PARENT,
@@ -116,14 +111,6 @@ _tme_gtk_screen_quit(struct tme_gtk_screen *screen)
   gtk_widget_show(dialog);
 }
 
-/* this is called for the Quit menu item: */
-static void
-_tme_gtk_screen_quit_item(GtkWidget *menu_item,
-			  struct tme_gtk_screen *screen)
-{
-  _tme_gtk_screen_quit(screen);
-}
-
 /* this is called when the window is being closed: */
 static gboolean
 _tme_gtk_screen_delete(GtkWidget *window,
@@ -131,55 +118,11 @@ _tme_gtk_screen_delete(GtkWidget *window,
 		       struct tme_gtk_screen *screen)
 {
   /* closing the window quits the emulator, after asking: */
-  _tme_gtk_screen_quit(screen);
+  _tme_gtk_screen_quit(&screen->screen);
   return (TRUE);
 }
 
-/* this sets the screen scaling to that indicated by the Scale menu: */
-static void
-_tme_gtk_screen_scale_default(GtkWidget *widget,
-			      struct tme_gtk_screen *screen)
-{
-  if (!gtk_check_menu_item_get_active(GTK_CHECK_MENU_ITEM(GTK_MENU_ITEM(widget))))
-    return;
-
-  _tme_screen_scale_set(screen, -TME_FB_XLAT_SCALE_NONE );
-}
-
-/* this sets the screen scaling to that indicated by the Scale menu: */
-static void
-_tme_gtk_screen_scale_half(GtkWidget *widget,
-			   struct tme_gtk_screen *screen)
-{
-  if (!gtk_check_menu_item_get_active(GTK_CHECK_MENU_ITEM(GTK_MENU_ITEM(widget))))
-    return;
-
-  _tme_screen_scale_set(screen, TME_FB_XLAT_SCALE_HALF );
-}
-
-/* this sets the screen scaling to that indicated by the Scale menu: */
-static void
-_tme_gtk_screen_scale_full(GtkWidget *widget,
-			   struct tme_gtk_screen *screen)
-{
-  if (!gtk_check_menu_item_get_active(GTK_CHECK_MENU_ITEM(GTK_MENU_ITEM(widget))))
-    return;
-
-  _tme_screen_scale_set(screen, TME_FB_XLAT_SCALE_NONE );
-}
-
-/* this sets the screen scaling to that indicated by the Scale menu: */
-static void
-_tme_gtk_screen_scale_double(GtkWidget *widget,
-			     struct tme_gtk_screen *screen)
-{
-  if (!gtk_check_menu_item_get_active(GTK_CHECK_MENU_ITEM(GTK_MENU_ITEM(widget))))
-    return;
-
-  _tme_screen_scale_set(screen, TME_FB_XLAT_SCALE_DOUBLE );
-}
-
-/* this sets the screen size: */
+/* this sets the screen format: */
 static inline void
 _tme_screen_format_set(struct tme_gtk_screen *screen,
 		       cairo_format_t format)
@@ -188,77 +131,55 @@ _tme_screen_format_set(struct tme_gtk_screen *screen,
   _tme_screen_configure(screen);
 }
 
-/* this sets the screen format to that indicated by the Format menu: */
+/* this is called for a Format item: */
 static void
-_tme_gtk_screen_format_argb32(GtkWidget *widget,
-			      struct tme_gtk_screen *screen)
+_tme_gtk_screen_format_item(struct tme_screen *screen,
+			    struct tme_display_menu_item *item)
 {
-  if (!gtk_check_menu_item_get_active(GTK_CHECK_MENU_ITEM(GTK_MENU_ITEM(widget))))
-    return;
-
-  _tme_screen_format_set(screen, CAIRO_FORMAT_ARGB32);
+  _tme_screen_format_set((struct tme_gtk_screen *) screen,
+			 (cairo_format_t) item->tme_display_menu_item_value);
 }
 
-/* this sets the screen format to that indicated by the Format menu: */
-static void
-_tme_gtk_screen_format_rgb24(GtkWidget *widget,
-			     struct tme_gtk_screen *screen)
+/* this adds the Format submenu, after the Scale submenu, to a
+   screen's new shared menus: */
+void
+_tme_gtk_screen_menus_new(struct tme_gtk_screen *screen)
 {
-  if (!gtk_check_menu_item_get_active(GTK_CHECK_MENU_ITEM(GTK_MENU_ITEM(widget))))
-    return;
-
-  _tme_screen_format_set(screen, CAIRO_FORMAT_RGB24);
-}
-
-/* this sets the screen format to that indicated by the Format menu: */
-static void
-_tme_gtk_screen_format_a8(GtkWidget *widget,
-			  struct tme_gtk_screen *screen)
-{
-  if (!gtk_check_menu_item_get_active(GTK_CHECK_MENU_ITEM(GTK_MENU_ITEM(widget))))
-    return;
-
-  _tme_screen_format_set(screen, CAIRO_FORMAT_A8);
-}
-
-/* this sets the screen format to that indicated by the Format menu: */
-static void
-_tme_gtk_screen_format_a1(GtkWidget *widget,
-			  struct tme_gtk_screen *screen)
-{
-  if (!gtk_check_menu_item_get_active(GTK_CHECK_MENU_ITEM(GTK_MENU_ITEM(widget))))
-    return;
-
-  _tme_screen_format_set(screen, CAIRO_FORMAT_A1);
-}
-
-/* this sets the screen format to that indicated by the Format menu: */
-static void
-_tme_gtk_screen_format_rgb16_565(GtkWidget *widget,
-				 struct tme_gtk_screen *screen)
-{
-  if (!gtk_check_menu_item_get_active(GTK_CHECK_MENU_ITEM(GTK_MENU_ITEM(widget))))
-    return;
-
-  _tme_screen_format_set(screen, CAIRO_FORMAT_RGB16_565);
-}
-
-static struct tme_gtk_menu_item scale_items[] =
-  {
-   { _("Default"), G_CALLBACK(_tme_gtk_screen_scale_default) },
-   { _("Half"), G_CALLBACK(_tme_gtk_screen_scale_half) },
-   { _("Full"), G_CALLBACK(_tme_gtk_screen_scale_full) },
-   { _("Double"), G_CALLBACK(_tme_gtk_screen_scale_double) }
+  static const struct {
+    const char *label;
+    cairo_format_t format;
+  } formats[] = {
+    { "ARGB32", CAIRO_FORMAT_ARGB32 },
+    { "RGB24", CAIRO_FORMAT_RGB24 },
+    { "A8", CAIRO_FORMAT_A8 },
+    { "A1", CAIRO_FORMAT_A1 },
+    { "RGB16_565", CAIRO_FORMAT_RGB16_565 },
   };
+  struct tme_display_menus *menus;
+  struct tme_display_menu *screen_menu;
+  struct tme_display_menu_item *scale, *item;
+  unsigned int format_i;
 
-static struct tme_gtk_menu_item format_items[] =
-  {
-   { _("ARGB32"), G_CALLBACK(_tme_gtk_screen_format_argb32) },
-   { _("RGB24"), G_CALLBACK(_tme_gtk_screen_format_rgb24) },
-   { _("A8"), G_CALLBACK(_tme_gtk_screen_format_a8) },
-   { _("A1"), G_CALLBACK(_tme_gtk_screen_format_a1) },
-   { _("RGB16_565"), G_CALLBACK(_tme_gtk_screen_format_rgb16_565) }
-  };
+  menus = screen->screen.tme_screen_menus;
+  screen_menu = menus->tme_display_menus_bar->tme_display_menu_items->tme_display_menu_item_submenu;
+  for (scale = screen_menu->tme_display_menu_items;
+       scale->tme_display_menu_item_submenu != menus->tme_display_menus_scale;
+       scale = scale->tme_display_menu_item_next);
+  item = _tme_display_menu_insert(screen_menu, scale,
+				  TME_DISPLAY_MENU_ITEM_SUBMENU,
+				  _("Format"), NULL, NULL);
+  screen_menu = item->tme_display_menu_item_submenu;
+  for (format_i = 0; format_i < TME_ARRAY_ELS(formats); format_i++) {
+    item = _tme_display_menu_append(screen_menu,
+				    TME_DISPLAY_MENU_ITEM_RADIO,
+				    formats[format_i].label,
+				    _tme_gtk_screen_format_item, NULL);
+    item->tme_display_menu_item_value = formats[format_i].format;
+    item->tme_display_menu_item_checked
+      = (formats[format_i].format == screen->tme_gtk_screen_format);
+  }
+  _tme_display_menu_changed(&screen->screen);
+}
 
 /* Screen-specific size request */
 static void _tme_gtk_screen_resize(struct tme_gtk_screen *screen) {
@@ -520,52 +441,6 @@ _tme_gtk_screen_capture(struct tme_screen *_screen,
   return (TME_OK);
 }
 
-/* the Save Screenshot menu item: */
-static void
-_tme_gtk_screen_screenshot_item(GtkWidget *menu_item, struct tme_gtk_screen *screen)
-{
-  char *output;
-
-  output = NULL;
-  if (_tme_display_screenshot(&screen->screen, NULL, &output) != TME_OK
-      && output != NULL) {
-    _tme_gtk_screen_message(&screen->screen, output);
-  }
-  if (output != NULL) {
-    tme_free(output);
-  }
-}
-
-/* the Record menu item: */
-static void
-_tme_gtk_screen_record_item(GtkWidget *menu_item, struct tme_gtk_screen *screen)
-{
-  char *output;
-  int active, rc;
-
-  active = gtk_check_menu_item_get_active(GTK_CHECK_MENU_ITEM(menu_item));
-  output = NULL;
-  rc = TME_OK;
-
-  /* this item is also set when a command starts or stops a recording,
-     so only act if the state really changed: */
-  if (active && !_tme_display_recording(&screen->screen)) {
-    rc = _tme_display_record_start(&screen->screen, NULL, &output);
-    if (rc != TME_OK) {
-      gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(menu_item), FALSE);
-    }
-  }
-  else if (!active && _tme_display_recording(&screen->screen)) {
-    rc = _tme_display_record_stop(&screen->screen, &output);
-  }
-  if (output != NULL) {
-    if (rc != TME_OK) {
-      _tme_gtk_screen_message(&screen->screen, output);
-    }
-    tme_free(output);
-  }
-}
-
 /* this is called before the screen's display is updated: */
 static void
 _tme_gtk_screen_redraw(struct tme_gtk_screen *screen, int x, int y, int w, int h)
@@ -612,13 +487,6 @@ _tme_gtk_screen_new(struct tme_gdk_display *display,
   struct tme_gtk_screen *screen;
   GdkDisplay *gdkdisplay;
   GdkDeviceManager *devices;
-  GtkWidget *menu_bar;
-  GtkWidget *menu;
-  GtkWidget *submenu;
-  GtkWidget *menu_item;
-  GtkAccelGroup *accel_group;
-  guint accel_key;
-  GdkModifierType accel_mods;
 
   screen = tme_screen_new(display, struct tme_gtk_screen, conn);
 
@@ -639,72 +507,12 @@ _tme_gtk_screen_new(struct tme_gdk_display *display,
   gtk_container_add(GTK_CONTAINER(screen->tme_gtk_screen_window),
 		    screen->tme_gtk_screen_vbox0);
 
-  /* create the menu bar and pack it into the outer vertical packing
-     box: */
-  menu_bar = gtk_menu_bar_new ();
-  gtk_box_pack_start(GTK_BOX(screen->tme_gtk_screen_vbox0), 
-		     menu_bar,
-		     FALSE, FALSE, 0);
-  //  gtk_widget_show(menu_bar);
-
-  /* create the Screen menu: */
-  menu = gtk_menu_new();
-
-  /* create the Screen scaling submenu: */
-  submenu = _tme_display_menu_radio(screen, scale_items, TME_ARRAY_ELS(scale_items));
-
-  /* create the Screen scaling submenu item: */
-  menu_item = gtk_menu_item_new_with_label(_("Scale"));
-  //  gtk_widget_show(menu_item);
-  gtk_menu_item_set_submenu(GTK_MENU_ITEM(menu_item), submenu);
-  gtk_menu_shell_append(GTK_MENU_SHELL(menu), menu_item);
-
-  /* create the Screen colormap submenu: */
-  submenu = _tme_display_menu_radio(screen, format_items, TME_ARRAY_ELS(format_items));
-
-  /* create the Screen scaling submenu item: */
-  menu_item = gtk_menu_item_new_with_label(_("Format"));
-  //  gtk_widget_show(menu_item);
-  gtk_menu_item_set_submenu(GTK_MENU_ITEM(menu_item), submenu);
-  gtk_menu_shell_append(GTK_MENU_SHELL(menu), menu_item);
-
-  /* create the screen capture items: */
-  gtk_menu_shell_append(GTK_MENU_SHELL(menu), gtk_separator_menu_item_new());
-  menu_item = gtk_menu_item_new_with_label(_("Save Screenshot"));
-  g_signal_connect(menu_item, "activate",
-		   G_CALLBACK(_tme_gtk_screen_screenshot_item), screen);
-  gtk_menu_shell_append(GTK_MENU_SHELL(menu), menu_item);
-  menu_item = gtk_check_menu_item_new_with_label(_("Record"));
-  g_signal_connect(menu_item, "toggled",
-		   G_CALLBACK(_tme_gtk_screen_record_item), screen);
-  gtk_menu_shell_append(GTK_MENU_SHELL(menu), menu_item);
-  screen->tme_gtk_screen_record_item = menu_item;
-
-  /* create the Quit item, with Cmd-Q (Ctrl-Q other than on macOS): */
-  gtk_menu_shell_append(GTK_MENU_SHELL(menu), gtk_separator_menu_item_new());
-  accel_group = gtk_accel_group_new();
-  gtk_window_add_accel_group(GTK_WINDOW(screen->tme_gtk_screen_window), accel_group);
-  menu_item = gtk_menu_item_new_with_mnemonic(_("_Quit"));
-  gtk_accelerator_parse("<Primary>q", &accel_key, &accel_mods);
-  gtk_widget_add_accelerator(menu_item, "activate", accel_group,
-			     accel_key, accel_mods, GTK_ACCEL_VISIBLE);
-  g_signal_connect(menu_item, "activate",
-		   G_CALLBACK(_tme_gtk_screen_quit_item), screen);
-  gtk_menu_shell_append(GTK_MENU_SHELL(menu), menu_item);
+  /* create the menu bar and the media status: */
+  _tme_gtk_menu_attach(screen);
 
   /* closing the window asks whether to quit: */
   g_signal_connect(screen->tme_gtk_screen_window, "delete-event",
 		   G_CALLBACK(_tme_gtk_screen_delete), screen);
-
-  /* create the Screen menu bar item, attach the menu to it, and 
-     attach the menu bar item to the menu bar: */
-  menu_item = gtk_menu_item_new_with_label("Screen");
-  //  gtk_widget_show(menu_item);
-  gtk_menu_item_set_submenu(GTK_MENU_ITEM(menu_item), menu);
-  gtk_menu_shell_append(GTK_MENU_SHELL(menu_bar), menu_item);
-
-  /* create the Media menu, and the media status: */
-  _tme_gtk_media_attach(screen, menu_bar);
 
   /* create the Gtkframe for the framebuffer area: */
   screen->tme_gtk_screen_gtkframe = gtk_drawing_area_new();
@@ -788,40 +596,6 @@ _tme_display_enter_focus(GtkWidget *widget,
   return (FALSE);
 }
 
-/* this creates a menu of radio buttons: */
-GtkWidget *
-_tme_display_menu_radio(struct tme_gtk_screen *screen,
-			struct tme_gtk_menu_item menu_items[],
-			int num_items)
-{
-  GtkWidget *menu;
-  GSList *menu_group;
-  GtkWidget *menu_item;
-  int i;
-  
-  /* create the menu: */
-  menu = gtk_menu_new();
-
-  /* create the menu items: */
-  menu_group = NULL;
-  for (i=0;i<num_items;i++) {
-    menu_item
-      = gtk_radio_menu_item_new_with_label(menu_group,
-					   menu_items[i].name);
-    menu_group
-      = gtk_radio_menu_item_get_group(GTK_RADIO_MENU_ITEM(menu_item));
-    g_signal_connect(menu_item, 
-		     "activate",
-		     menu_items[i].menu_func,
-		     (gpointer) screen);
-    gtk_menu_shell_append(GTK_MENU_SHELL(menu), menu_item);
-    //    gtk_widget_show(menu_item);
-  }
-
-  /* return the menu: */
-  return (menu);
-}
-
 /* the new GTK display function: */
 TME_ELEMENT_SUB_NEW_DECL(tme_host_gtk,display) {
   struct tme_gdk_display *display;
@@ -861,8 +635,10 @@ TME_ELEMENT_SUB_NEW_DECL(tme_host_gtk,display) {
   display->display.tme_screen_resize = _tme_gtk_screen_resize;
   display->display.tme_screen_redraw = _tme_gtk_screen_redraw;
 
+  display->display.tme_screen_quit = _tme_gtk_screen_quit;
   display->display.tme_screen_message = _tme_gtk_screen_message;
   display->display.tme_screen_capture = _tme_gtk_screen_capture;
+  _tme_gtk_menu_init(display);
 
   /* setup the thread loop function: */
   //tme_threads_init(NULL, gtk_main);

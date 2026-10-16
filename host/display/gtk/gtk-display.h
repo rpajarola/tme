@@ -47,6 +47,9 @@ _TME_RCSID("$Id: gtk-display.h,v 1.10 2009/08/28 01:29:47 fredette Exp $");
 
 /* macros: */
 
+/* how deep the menus can be: */
+#define TME_GTK_MENU_DEPTH		(8)
+
 /* types: */
 
 /* a display: */
@@ -95,24 +98,20 @@ struct tme_gtk_screen {
      that turns mouse mode off: */
   unsigned int tme_gtk_screen_mouse_mods;
 
-  /* the Media menu item, the media status label, and the media
-     generation they show: */
-  GtkWidget *tme_gtk_screen_media_menu_item;
+  /* the menu bar, built from the shared menus, the accelerators for
+     their shortcuts, and the menu generation it shows, if it has
+     been built: */
+  GtkWidget *tme_gtk_screen_menu_bar;
+  GtkAccelGroup *tme_gtk_screen_accel_group;
+  int tme_gtk_screen_menus_built;
+  unsigned long tme_gtk_screen_menus_generation;
+
+  /* the media status label, and the status generation it shows: */
   GtkWidget *tme_gtk_screen_media_label;
-  unsigned long tme_gtk_screen_media_generation;
+  unsigned long tme_gtk_screen_status_generation;
 
-  /* screen capture: the status bar context ID for its messages, and
-     the Record menu item: */
+  /* the status bar context ID for messages: */
   guint tme_gtk_screen_capture_cid;
-  GtkWidget *tme_gtk_screen_record_item;
-};
-
-/* a menu item: */
-struct tme_gtk_menu_item {
-  /* the string for the menu item label: */
-  const char *name;
-
-  GCallback menu_func;
 };
 
 /* prototypes: */
@@ -120,10 +119,11 @@ void _tme_gtk_keyboard_attach _TME_P((struct tme_gtk_screen *));
 void _tme_gtk_mouse_attach _TME_P((struct tme_gtk_screen *));
 void _tme_gtk_mouse_mode_off _TME_P((struct tme_gtk_screen *, guint32));
 void _tme_gtk_mouse_key_event _TME_P((struct tme_gtk_screen *, GdkEventKey *));
-void _tme_gtk_media_attach _TME_P((struct tme_gtk_screen *, GtkWidget *));
-void _tme_gtk_media_update _TME_P((struct tme_gtk_screen *));
+void _tme_gtk_menu_init _TME_P((struct tme_gdk_display *));
+void _tme_gtk_menu_attach _TME_P((struct tme_gtk_screen *));
+void _tme_gtk_menu_update _TME_P((struct tme_gtk_screen *));
+void _tme_gtk_screen_menus_new _TME_P((struct tme_gtk_screen *));
 gint _tme_display_enter_focus _TME_P((GtkWidget *, GdkEvent *, gpointer));
-GtkWidget *_tme_display_menu_radio _TME_P((struct tme_gtk_screen *, struct tme_gtk_menu_item *, int num_items));
 
 #endif /* _HOST_GTK_DISPLAY_H */
 

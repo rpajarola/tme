@@ -82,10 +82,11 @@ _tme_display_menu_free(struct tme_display_menu *menu)
   tme_free(menu);
 }
 
-/* this adds an item to the end of a menu.  a submenu item gets a new,
-   empty submenu: */
+/* this adds an item to a menu after another item, or at the start if
+   that is NULL.  a submenu item gets a new, empty submenu: */
 struct tme_display_menu_item *
-_tme_display_menu_append(struct tme_display_menu *menu,
+_tme_display_menu_insert(struct tme_display_menu *menu,
+			 struct tme_display_menu_item *after,
 			 unsigned int type,
 			 const char *label,
 			 tme_display_menu_func func,
@@ -105,11 +106,30 @@ _tme_display_menu_append(struct tme_display_menu *menu,
   item->tme_display_menu_item_func = func;
   item->tme_display_menu_item_private = private;
 
-  for (_prev = &menu->tme_display_menu_items;
-       *_prev != NULL;
-       _prev = &(*_prev)->tme_display_menu_item_next);
+  _prev = (after == NULL
+	   ? &menu->tme_display_menu_items
+	   : &after->tme_display_menu_item_next);
+  item->tme_display_menu_item_next = *_prev;
   *_prev = item;
   return (item);
+}
+
+/* this adds an item to the end of a menu: */
+struct tme_display_menu_item *
+_tme_display_menu_append(struct tme_display_menu *menu,
+			 unsigned int type,
+			 const char *label,
+			 tme_display_menu_func func,
+			 void *private)
+{
+  struct tme_display_menu_item *last;
+
+  last = menu->tme_display_menu_items;
+  if (last != NULL) {
+    for (; last->tme_display_menu_item_next != NULL;
+	 last = last->tme_display_menu_item_next);
+  }
+  return (_tme_display_menu_insert(menu, last, type, label, func, private));
 }
 
 /* this notes that a screen's menus have changed: */
