@@ -36,16 +36,6 @@
 #include "sdl-font.h"
 #include <string.h>
 
-/* the colors: */
-#define TME_SDL_COLOR_BAR		(0xe4e4e4)
-#define TME_SDL_COLOR_MENU		(0xf6f6f6)
-#define TME_SDL_COLOR_TEXT		(0x000000)
-#define TME_SDL_COLOR_DISABLED		(0x8c8c8c)
-#define TME_SDL_COLOR_HIGHLIGHT		(0x2f5fb3)
-#define TME_SDL_COLOR_HIGHLIGHT_TEXT	(0xffffff)
-#define TME_SDL_COLOR_BORDER		(0x8a8a8a)
-#define TME_SDL_COLOR_SEPARATOR		(0xc8c8c8)
-
 /* the character that shows that an item opens a submenu, a right
    guillemet in UTF-8: */
 #define TME_SDL_MENU_ARROW		"\302\273"
@@ -62,7 +52,7 @@ _tme_sdl_color(SDL_Renderer *renderer, Uint32 rgb)
 }
 
 /* this fills a rectangle: */
-static void
+void
 _tme_sdl_fill(struct tme_sdl_screen *screen,
 	      int x, int y, int w, int h,
 	      Uint32 rgb)
@@ -151,7 +141,7 @@ _tme_sdl_menu_init(struct tme_sdl_screen *screen)
 /* this returns the next character in UTF-8 text, as Latin-1.  other
    characters are '?', and bytes that aren't UTF-8 are taken as
    Latin-1: */
-static int
+int
 _tme_sdl_text_next(const char **_text)
 {
   const unsigned char *s;
@@ -191,7 +181,7 @@ _tme_sdl_text_next(const char **_text)
 }
 
 /* this returns the number of characters in UTF-8 text: */
-static int
+int
 _tme_sdl_text_length(const char *text)
 {
   int length;
@@ -236,7 +226,7 @@ _tme_sdl_char_draw(struct tme_sdl_screen *screen, int x, int y, int c)
 
 /* this draws UTF-8 text, at most some number of characters of it.
    text that is too long ends in "...": */
-static void
+void
 _tme_sdl_text_draw(struct tme_sdl_screen *screen,
 		   int x, int y,
 		   const char *text,
@@ -269,7 +259,7 @@ _tme_sdl_text_draw(struct tme_sdl_screen *screen,
 }
 
 /* this returns the size of the renderer's output, in pixels: */
-static void
+void
 _tme_sdl_output_size(struct tme_sdl_screen *screen, int *_width, int *_height)
 {
   if (SDL_GetRendererOutputSize(screen->tme_sdl_screen_renderer,
@@ -349,7 +339,7 @@ _tme_sdl_menu_item_height(struct tme_sdl_screen *screen,
 }
 
 /* this returns the width of a border, in pixels: */
-static int
+int
 _tme_sdl_menu_border(struct tme_sdl_screen *screen)
 {
   return (TME_MAX(screen->screen.tme_screen_scale, 1));
@@ -647,10 +637,11 @@ _tme_sdl_menu_draw(struct tme_sdl_screen *screen)
   _tme_sdl_text_draw(screen, output_width - (right_length + 1) * fw, output_height - bar + pad,
 		     right, TME_SDL_COLOR_TEXT, right_length);
 
-  /* the open menus: */
+  /* the open menus, and any dialog over everything: */
   for (index = 0; index < screen->tme_sdl_screen_menu_depth; index++) {
     _tme_sdl_menu_draw_level(screen, index);
   }
+  _tme_sdl_dialog_draw(screen);
 
   screen->tme_sdl_screen_menus_drawn = menus->tme_display_menus_generation;
   screen->tme_sdl_screen_status_drawn = menus->tme_display_menus_status_generation;
@@ -790,6 +781,12 @@ _tme_sdl_menu_mouse_event(struct tme_sdl_screen *screen,
     x = (x * output_width) / window_width;
     y = (y * output_height) / window_height;
   }
+
+  /* a dialog takes all mouse events while it's open: */
+  if (screen->tme_sdl_screen_dialogs != NULL) {
+    _tme_sdl_dialog_mouse_event(screen, event, x, y);
+    return (TRUE);
+  }
   bar_index = _tme_sdl_menu_bar_hit(screen, x, y);
 
   /* when no menu is open, a press on a menu bar item opens its menu,
@@ -869,6 +866,12 @@ _tme_sdl_menu_key_event(struct tme_sdl_screen *screen,
 			const SDL_Event *event)
 {
   int level, count, highlight;
+
+  /* a dialog takes all keys while it's open: */
+  if (screen->tme_sdl_screen_dialogs != NULL) {
+    _tme_sdl_dialog_key_event(screen, event);
+    return (TRUE);
+  }
 
   _tme_sdl_menu_check(screen);
   if (screen->tme_sdl_screen_menu_depth == 0) {
