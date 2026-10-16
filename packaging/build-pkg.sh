@@ -22,8 +22,11 @@ brew=$(brew --prefix)
 if [ ! -x configure ]; then
   autoreconf -fi
 fi
-# Room in the load commands for the bundled libraries' paths:
-./configure --prefix=/usr/local LDFLAGS="-Wl,-headerpad_max_install_names"
+# Room in the load commands for the bundled libraries' paths.  The
+# package has both the GTK and the SDL displays, so configure must find
+# them, instead of leaving out one that it doesn't find:
+./configure --prefix=/usr/local LDFLAGS="-Wl,-headerpad_max_install_names" \
+  --enable-hosts="gtk rfb sdl tun bsd udp"
 make -j"$(sysctl -n hw.ncpu)"
 make install DESTDIR="$work/stage"
 

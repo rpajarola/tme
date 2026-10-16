@@ -294,10 +294,16 @@ bison (for generating tmesh input grammar)
 perl (for runtime, or compile-time if regenerating certain sources)
 
 @item
-Glib2 (if using glib or sjlj threading, or automatically if GTK used)
+Glib2 (if using glib threading, or automatically if GTK used)
 
 @item
-GTK+3 (for a GUI, but will work without if serial support available)
+SDL2 or GTK+3, or both (for a GUI, but will work without if serial
+support available).  configure builds the display for each of them that
+it finds.
+
+@item
+zlib (to compress screenshots) and ffmpeg (at run time, to record the
+screen)
 
 @item
 libvncserver (for a GUI, but will work without if serial support available)
@@ -482,10 +488,39 @@ The cgthree patch has been incoporated into NetBSD as of version 8.0.
 The bwtwo patch was incoporated into NetBSD 9.0.
 
 @menu
+* SDL::
 * GTK::
 * VNC::
 * Screenshots::
 @end menu
+
+@node SDL
+@subsection SDL
+TME supports version 2 of SDL, which needs nothing else installed.
+You can create a frontend with an SDL interface with this line in the
+configuration file:
+
+@example
+display0: tme/host/sdl/display
+@end example
+
+The SDL display draws its own menu bar above the emulated screen and a
+status line below it, so the window looks the same on every host.  The
+menus have the same items as the GTK display's: the Screen menu
+scales the screen, saves screenshots and recordings (@pxref{GTK}), and
+quits, and the Media menu loads and ejects removable media.  When the
+mouse isn't being used by the emulated machine, click a menu to open
+it; F10 opens the menus from the keyboard, and the arrow keys, Return
+and Escape use them.  To load media, the SDL display runs the
+desktop's file chooser: @command{osascript} on macOS, and
+@command{zenity} or @command{kdialog} elsewhere.
+
+Click in the screen to give the mouse to the emulated machine, and
+press Ctrl+Shift+Alt (Ctrl+Shift+Cmd on macOS) to take it back.
+Cmd-Q on macOS, and Ctrl-Q elsewhere, asks whether to quit.
+
+On macOS, the SDL display needs TME configured with its default
+cooperative threads.
 
 @node GTK
 @subsection GTK
