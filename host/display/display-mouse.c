@@ -86,7 +86,7 @@ int _tme_mouse_buttons_event(int buttons, int x, int y, void *disp)
   tme_mutex_lock(&display->tme_display_mutex);
 
   /* set the event time: */
-  tme_event.tme_mouse_event_time = tme_thread_get_time();
+  tme_event.tme_mouse_event_time = _tme_display_event_time();
 
   /* if the button mask and pointer position haven't changed, return now.
      every time we warp the pointer we will get a motion event, and

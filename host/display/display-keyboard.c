@@ -65,7 +65,7 @@ _tme_keyboard_disp_new(struct tme_display *display)
   struct tme_keyboard_buffer *buffer;
   tme_keyboard_keyval_t *modifier_keysyms[TME_KEYBOARD_MODIFIER_MAX + 1];
   int modifier_keysyms_count[TME_KEYBOARD_MODIFIER_MAX + 1];
-  int keycode, keysym_i, keysym_j, modifier;
+  int keycode, keysym_i, keysym_j, modifier, modifier_keysym_i;
   const char *string;
   struct tme_keysym *_keysym;
   int rc;
@@ -204,6 +204,15 @@ _tme_keyboard_disp_new(struct tme_display *display)
 					   modifier,
 					   modifier_keysyms[modifier]);
       assert (rc == TME_OK);
+
+      /* remember the modifier that these keysyms are attached to: */
+      for (modifier_keysym_i = 0;
+	   modifier_keysym_i < modifier_keysyms_count[modifier];
+	   modifier_keysym_i++) {
+	tme_hash_insert(display->tme_display_keyboard_keysym_to_modifier,
+			tme_keyboard_hash_data_from_keyval(modifier_keysyms[modifier][modifier_keysym_i]),
+			tme_hash_data_from_uint32(modifier + 1));
+      }
       tme_free(modifier_keysyms[modifier]);
     }
   }
@@ -219,12 +228,58 @@ _tme_keyboard_keyval_name(tme_keyboard_keyval_t keyval)
 }
 #endif
 
-/* this is a generic callback for a key press or release event: */
+/* this is a generic callback for a key press or release event, for
+   a display that doesn't have the modifiers mask: */
 int
 _tme_keyboard_key_press(int down, tme_keyboard_keyval_t key, void *disp)
 {
   struct tme_keyboard_event tme_event;
   struct tme_display *display = (_tme_display_get) ? (_tme_display_get(disp)) : (disp);
+  tme_keyboard_modifiers_t modifiers;
+  int modifier, pressed;
+
+  /* lock the mutex: */
+  tme_mutex_lock(&display->tme_display_mutex);
+
+  /* the modifiers mask for the event is the mask from before it.  as
+     in the keyboard buffer, a modifier is set while any keysym
+     attached to it is pressed.  telling the keyboard buffer about any
+     other mask makes it press or release modifier keysyms: */
+  modifiers = 0;
+  for (modifier = 0;
+       modifier <= TME_KEYBOARD_MODIFIER_MAX;
+       modifier++) {
+    if (display->tme_display_keyboard_modkeys_count[modifier] > 0) {
+      modifiers |= (1 << modifier);
+    }
+  }
+
+  /* if this keysym is attached to a modifier, track whether it is
+     pressed: */
+  modifier
+    = ((int)
+       tme_hash_data_to_uint32(tme_hash_lookup(display->tme_display_keyboard_keysym_to_modifier,
+					       tme_keyboard_hash_data_from_keyval(key)))) - 1;
+  if (modifier != TME_KEYBOARD_MODIFIER_NONE) {
+    pressed
+      = (tme_hash_lookup(display->tme_display_keyboard_modkeys_pressed,
+			 tme_keyboard_hash_data_from_keyval(key))
+	 != (tme_hash_data_t) 0);
+    if (down && !pressed) {
+      tme_hash_insert(display->tme_display_keyboard_modkeys_pressed,
+		      tme_keyboard_hash_data_from_keyval(key),
+		      (tme_hash_data_t) 1);
+      display->tme_display_keyboard_modkeys_count[modifier]++;
+    }
+    else if (!down && pressed) {
+      tme_hash_remove(display->tme_display_keyboard_modkeys_pressed,
+		      tme_keyboard_hash_data_from_keyval(key));
+      display->tme_display_keyboard_modkeys_count[modifier]--;
+    }
+  }
+
+  /* unlock the mutex: */
+  tme_mutex_unlock(&display->tme_display_mutex);
 
   /* make a tme event from this key event: */
   tme_event.tme_keyboard_event_type
@@ -232,10 +287,10 @@ _tme_keyboard_key_press(int down, tme_keyboard_keyval_t key, void *disp)
        ? TME_KEYBOARD_EVENT_PRESS
        : TME_KEYBOARD_EVENT_RELEASE);
   tme_event.tme_keyboard_event_modifiers
-    = TME_KEYBOARD_MODIFIER_NONE;
+    = modifiers;
   tme_event.tme_keyboard_event_keyval
     = key;
-  tme_event.tme_keyboard_event_time = tme_thread_get_time();
+  tme_event.tme_keyboard_event_time = _tme_display_event_time();
 
   return _tme_keyboard_key_event(&tme_event, display);
 }
@@ -630,6 +685,17 @@ _tme_keyboard_new(struct tme_display *display)
     = tme_hash_new(tme_direct_hash,
 		   tme_direct_compare,
 		   (tme_hash_data_t) TME_KEYBOARD_KEYVAL_UNDEF);
+
+  /* allocate the keysym-to-modifier and pressed modifier keysyms
+     hashes: */
+  display->tme_display_keyboard_keysym_to_modifier
+    = tme_hash_new(tme_direct_hash,
+		   tme_direct_compare,
+		   (tme_hash_data_t) 0);
+  display->tme_display_keyboard_modkeys_pressed
+    = tme_hash_new(tme_direct_hash,
+		   tme_direct_compare,
+		   (tme_hash_data_t) 0);
 
   /* there are no bad keysyms: */
   display->tme_display_keyboard_keysyms_bad = NULL;

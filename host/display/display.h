@@ -133,6 +133,14 @@ struct tme_display {
   /* our keysym to keycode hash: */
   tme_hash_t tme_display_keyboard_keysym_to_keycode;
 
+  /* for key events that come without a modifiers mask: the modifier,
+     plus one, that each keysym attached to a modifier is attached to,
+     the keysyms attached to modifiers that are pressed, and how many
+     of those are pressed for each modifier: */
+  tme_hash_t tme_display_keyboard_keysym_to_modifier;
+  tme_hash_t tme_display_keyboard_modkeys_pressed;
+  unsigned int tme_display_keyboard_modkeys_count[TME_KEYBOARD_MODIFIER_MAX + 1];
+
   /* the next keysym to allocate for an unknown keysym string: */
   unsigned int tme_display_keyboard_keysym_alloc_next;
 
@@ -196,6 +204,7 @@ void _tme_screen_scale_set _TME_P((struct tme_screen *screen,
 void _tme_screen_xlat_set _TME_P((struct tme_screen *screen));
 int _tme_screen_configure _TME_P((struct tme_screen *screen));
 int tme_display_init _TME_P((struct tme_element *, struct tme_display *));
+tme_uint32_t _tme_display_event_time _TME_P((void));
 void _tme_keyboard_new _TME_P((struct tme_display *));
 int _tme_keyboard_connections_new _TME_P((struct tme_display *,
 					  struct tme_connection **));
