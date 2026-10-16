@@ -845,6 +845,52 @@ _tme_sdl_screen_redraw(struct tme_screen *_screen, int x, int y, int w, int h)
   return (TME_OK);
 }
 
+/* this captures an image of a screen, at the size of the emulated
+   framebuffer, with the mutex locked: */
+static int
+_tme_sdl_screen_capture(struct tme_screen *_screen,
+			struct tme_display_image *image)
+{
+  struct tme_sdl_screen *screen;
+  const struct tme_fb_connection *conn_fb_other;
+  const tme_uint32_t *row;
+  tme_uint32_t *pixel;
+  int width, height, x, y;
+
+  screen = (struct tme_sdl_screen *) _screen;
+  conn_fb_other
+    = (screen->screen.tme_screen_fb != NULL
+       ? ((const struct tme_fb_connection *)
+	  screen->screen.tme_screen_fb->tme_fb_connection.tme_connection_other)
+       : NULL);
+  if (screen->tme_sdl_screen_pixels == NULL
+      || screen->tme_sdl_screen_texture_width <= 0
+      || screen->tme_sdl_screen_texture_height <= 0
+      || conn_fb_other == NULL
+      || conn_fb_other->tme_fb_connection_width <= 0
+      || conn_fb_other->tme_fb_connection_height <= 0) {
+    return (EAGAIN);
+  }
+
+  /* the pixels are scaled from the emulated framebuffer, so take
+     every scaled pixel's top left device pixel: */
+  width = conn_fb_other->tme_fb_connection_width;
+  height = conn_fb_other->tme_fb_connection_height;
+  image->tme_display_image_width = width;
+  image->tme_display_image_height = height;
+  image->tme_display_image_pixels = tme_new(tme_uint32_t, (size_t) width * height);
+  pixel = image->tme_display_image_pixels;
+  for (y = 0; y < height; y++) {
+    row = (screen->tme_sdl_screen_pixels
+	   + ((size_t) ((y * screen->tme_sdl_screen_texture_height) / height)
+	      * screen->tme_sdl_screen_texture_width));
+    for (x = 0; x < width; x++) {
+      *(pixel++) = row[(x * screen->tme_sdl_screen_texture_width) / width] & 0xffffff;
+    }
+  }
+  return (TME_OK);
+}
+
 /* this makes a new screen, with the mutex locked: */
 static struct tme_screen *
 _tme_sdl_screen_new(struct tme_display *_display,
@@ -960,6 +1006,7 @@ TME_ELEMENT_SUB_NEW_DECL(tme_host_sdl,display) {
   display->display.tme_screen_redraw = _tme_sdl_screen_redraw;
   display->display.tme_screen_quit = _tme_sdl_screen_quit;
   display->display.tme_screen_error = _tme_sdl_screen_error;
+  display->display.tme_screen_capture = _tme_sdl_screen_capture;
   _tme_sdl_files_init(display);
 
   return (TME_OK);
