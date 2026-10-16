@@ -115,7 +115,7 @@ struct tme_gtk_screen {
 };
 
 /* a menu item: */
-struct tme_display_menu_item {
+struct tme_gtk_menu_item {
   /* the string for the menu item label: */
   const char *name;
 
@@ -130,7 +130,7 @@ void _tme_gtk_mouse_key_event _TME_P((struct tme_gtk_screen *, GdkEventKey *));
 void _tme_gtk_media_attach _TME_P((struct tme_gtk_screen *, GtkWidget *));
 void _tme_gtk_media_update _TME_P((struct tme_gtk_screen *));
 gint _tme_display_enter_focus _TME_P((GtkWidget *, GdkEvent *, gpointer));
-GtkWidget *_tme_display_menu_radio _TME_P((struct tme_gtk_screen *, struct tme_display_menu_item *, int num_items));
+GtkWidget *_tme_display_menu_radio _TME_P((struct tme_gtk_screen *, struct tme_gtk_menu_item *, int num_items));
 
 #endif /* _HOST_GTK_DISPLAY_H */
 

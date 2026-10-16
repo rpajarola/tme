@@ -211,6 +211,13 @@ tme_display_update(void *disp) {
   int rc;
   
   display = (struct tme_display *)disp;
+
+  /* bring any menus and status lines up to date: */
+  for (screen = display->tme_display_screens;
+       screen != NULL;
+       screen = screen->tme_screen_next) {
+    _tme_display_menus_update(screen);
+  }
   
   /* if the display has an update function, call it: */
   rc = (display->tme_display_update) ?

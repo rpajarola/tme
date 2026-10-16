@@ -238,7 +238,7 @@ _tme_gtk_screen_format_rgb16_565(GtkWidget *widget,
   _tme_screen_format_set(screen, CAIRO_FORMAT_RGB16_565);
 }
 
-static struct tme_display_menu_item scale_items[] =
+static struct tme_gtk_menu_item scale_items[] =
   {
    { _("Default"), G_CALLBACK(_tme_gtk_screen_scale_default) },
    { _("Half"), G_CALLBACK(_tme_gtk_screen_scale_half) },
@@ -246,7 +246,7 @@ static struct tme_display_menu_item scale_items[] =
    { _("Double"), G_CALLBACK(_tme_gtk_screen_scale_double) }
   };
 
-static struct tme_display_menu_item format_items[] =
+static struct tme_gtk_menu_item format_items[] =
   {
    { _("ARGB32"), G_CALLBACK(_tme_gtk_screen_format_argb32) },
    { _("RGB24"), G_CALLBACK(_tme_gtk_screen_format_rgb24) },
@@ -1054,7 +1054,7 @@ _tme_display_enter_focus(GtkWidget *widget,
 /* this creates a menu of radio buttons: */
 GtkWidget *
 _tme_display_menu_radio(struct tme_gtk_screen *screen,
-			struct tme_display_menu_item menu_items[],
+			struct tme_gtk_menu_item menu_items[],
 			int num_items)
 {
   GtkWidget *menu;
