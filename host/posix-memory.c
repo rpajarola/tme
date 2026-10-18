@@ -39,6 +39,7 @@ _TME_RCSID("$Id: posix-memory.c,v 1.7 2009/08/30 21:50:17 fredette Exp $");
 /* includes: */
 #include <tme/generic/bus-device.h>
 #include <tme/hash.h>
+#include <tme/control.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <strings.h>
@@ -369,6 +370,47 @@ _tme_posix_memory_valids_set(void *_memory,
   tme_mutex_unlock(&memory->tme_posix_memory_mutex);
 }
 
+/* this loses RAM's contents when the machine is powered up again: */
+static void
+_tme_posix_memory_power_cycle(void *_memory)
+{
+  struct tme_posix_memory *memory;
+  struct tme_posix_memory_valids *valids;
+  unsigned long page_count;
+
+  /* recover our data structure: */
+  memory = (struct tme_posix_memory *) _memory;
+
+  /* lock our mutex: */
+  tme_mutex_lock(&memory->tme_posix_memory_mutex);
+
+  /* clear the contents: */
+  memset(memory->tme_posix_memory_contents,
+	 0,
+	 memory->tme_posix_memory_device.tme_bus_device_address_last + 1);
+
+  /* if we're cacheable, every page has been written, so clear all
+     of the valids bitmasks, and invalidate all outstanding TLB
+     entries: */
+  if (memory->tme_posix_memory_tlb_tokens != NULL) {
+    for (valids = memory->tme_posix_memory_valids;
+	 valids != NULL;
+	 valids = valids->tme_posix_memory_valids_next) {
+      page_count
+	= ((memory->tme_posix_memory_cacheable.tme_bus_cacheable_size
+	    + ((((tme_uint32_t) 1) << valids->tme_posix_memory_valids_page_size_log2) - 1))
+	   >> valids->tme_posix_memory_valids_page_size_log2);
+      memset((tme_uint8_t *) valids->tme_posix_memory_valids_bitmask + 0,
+	     0,
+	     ((page_count + 7) / 8));
+    }
+    _tme_posix_memory_tlbs_invalidate(memory);
+  }
+
+  /* unlock our mutex: */
+  tme_mutex_unlock(&memory->tme_posix_memory_mutex);
+}
+
 /* the new memory function: */
 TME_ELEMENT_SUB_NEW_DECL(tme_host_posix,memory) {
   unsigned int memory_type;
@@ -570,6 +612,11 @@ TME_ELEMENT_SUB_NEW_DECL(tme_host_posix,memory) {
   /* initialize our simple bus device descriptor: */
   memory->tme_posix_memory_device.tme_bus_device_tlb_fill = _tme_posix_memory_tlb_fill;
   memory->tme_posix_memory_device.tme_bus_device_address_last = (memory_size - 1);
+
+  /* RAM loses its contents when the machine is powered up again: */
+  if (memory_type == TME_POSIX_MEMORY_RAM) {
+    tme_power_cycle_register(_tme_posix_memory_power_cycle, memory);
+  }
 
   /* fill the element: */
   element->tme_element_private = memory;

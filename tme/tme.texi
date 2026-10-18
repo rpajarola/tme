@@ -530,8 +530,10 @@ interface by invoking the appropriate line in the configuration file.
 See examples in the machines directory for details.
 
 The Devices menu has the controls of the emulated machine, under its
-name, like @samp{mainbus0}: Reset, which resets the machine like
-@samp{command mainbus0 power up}, and on the Sun-3 and Sun-4, the
+name, like @samp{mainbus0}: Reset, which turns the machine off and on
+again like @samp{command mainbus0 power up}, so that its memory loses
+its contents and the PROM starts as it does at power-on, and on the
+Sun-3 and Sun-4, the
 Diagnostic Switch, and on the Sun-3, Reset on Watchdog, which are the
 @samp{diag-switch} and @samp{watchdog-reset} commands.
 

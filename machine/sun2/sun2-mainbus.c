@@ -368,6 +368,9 @@ _tme_sun2_command(struct tme_element *element, const char * const * args, char *
 
   if (do_reset) {
 
+    /* powering up again loses what doesn't survive losing power: */
+    tme_power_cycle();
+
     /* return to boot state with interrupts disabled, or the CPU
        would fetch its reset vectors through the MMU instead of from
        the PROM: */

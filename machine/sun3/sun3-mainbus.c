@@ -511,6 +511,9 @@ _tme_sun3_command(struct tme_element *element, const char * const * args, char *
   }
 
   if (do_reset) {
+
+    /* powering up again loses what doesn't survive losing power: */
+    tme_power_cycle();
     _tme_sun3_reset(sun3, 0);
   }
 

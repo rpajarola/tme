@@ -73,10 +73,17 @@ struct tme_controls {
 				  int, char **_output));
 };
 
+/* elements whose contents don't survive losing power, like RAM,
+   register a function that loses them.  a machine calls them all when
+   it's powered up again, so its firmware sees a cold start: */
+typedef void (*tme_power_cycle_t) _TME_P((void *));
+
 /* prototypes: */
 void tme_controls_register _TME_P((struct tme_controls *));
 void tme_controls_name _TME_P((struct tme_element *, _tme_const char *));
 struct tme_controls *tme_controls_list _TME_P((void));
 unsigned long tme_controls_generation _TME_P((void));
+void tme_power_cycle_register _TME_P((tme_power_cycle_t, void *));
+void tme_power_cycle _TME_P((void));
 
 #endif /* !_TME_CONTROL_H */

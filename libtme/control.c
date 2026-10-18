@@ -34,6 +34,16 @@ static struct tme_controls *_tme_controls_list;
 /* this counts changes to the controls: */
 static unsigned long _tme_controls_generation;
 
+/* a function that loses what doesn't survive losing power: */
+struct _tme_power_cycle {
+  struct _tme_power_cycle *_tme_power_cycle_next;
+  tme_power_cycle_t _tme_power_cycle_func;
+  void *_tme_power_cycle_private;
+};
+
+/* the functions that lose what doesn't survive losing power: */
+static struct _tme_power_cycle *_tme_power_cycles;
+
 /* this registers the controls of an element: */
 void
 tme_controls_register(struct tme_controls *controls)
@@ -81,4 +91,31 @@ unsigned long
 tme_controls_generation(void)
 {
   return (_tme_controls_generation);
+}
+
+/* this registers a function that loses what doesn't survive losing
+   power: */
+void
+tme_power_cycle_register(tme_power_cycle_t func, void *private)
+{
+  struct _tme_power_cycle *power_cycle;
+
+  power_cycle = tme_new(struct _tme_power_cycle, 1);
+  power_cycle->_tme_power_cycle_func = func;
+  power_cycle->_tme_power_cycle_private = private;
+  power_cycle->_tme_power_cycle_next = _tme_power_cycles;
+  _tme_power_cycles = power_cycle;
+}
+
+/* this loses everything that doesn't survive losing power: */
+void
+tme_power_cycle(void)
+{
+  struct _tme_power_cycle *power_cycle;
+
+  for (power_cycle = _tme_power_cycles;
+       power_cycle != NULL;
+       power_cycle = power_cycle->_tme_power_cycle_next) {
+    (*power_cycle->_tme_power_cycle_func)(power_cycle->_tme_power_cycle_private);
+  }
 }
