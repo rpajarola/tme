@@ -96,10 +96,19 @@ _tme_sun3_ipl_check(struct tme_sun3 *sun3)
   return (TME_OK);
 }
 
-/* this resets the CPU and all busses: */
+/* this resets the CPU and all busses, and sets the bus error
+   register to tell the PROM why.  the machine first returns to boot
+   state with interrupts disabled, or the CPU would fetch its reset
+   vectors through the MMU instead of from the PROM: */
 static void
-_tme_sun3_reset(struct tme_sun3 *sun3)
+_tme_sun3_reset(struct tme_sun3 *sun3, tme_uint8_t buserr)
 {
+
+  /* return to boot state with interrupts disabled: */
+  _tme_sun3_enable_set(sun3, 0);
+  sun3->tme_sun3_ints = 0;
+  _tme_sun3_ipl_check(sun3);
+  sun3->tme_sun3_buserr = buserr;
 
   /* reset the CPU: */
   (*sun3->tme_sun3_m68k->tme_m68k_bus_connection.tme_bus_signal)
@@ -145,14 +154,7 @@ _tme_sun3_halt(struct tme_sun3 *sun3)
 	  (TME_SUN3_LOG_HANDLE(sun3),
 	   _("CPU halted, watchdog reset")));
 
-  /* a watchdog reset returns to boot state with interrupts
-     disabled: */
-  _tme_sun3_enable_set(sun3, 0);
-  sun3->tme_sun3_ints = 0;
-  _tme_sun3_ipl_check(sun3);
-  sun3->tme_sun3_buserr = TME_SUN3_BUSERR_WATCHDOG;
-
-  _tme_sun3_reset(sun3);
+  _tme_sun3_reset(sun3, TME_SUN3_BUSERR_WATCHDOG);
 }
 
 /* this notes that a bus has asserted or negated an interrupt line,
@@ -509,7 +511,7 @@ _tme_sun3_command(struct tme_element *element, const char * const * args, char *
   }
 
   if (do_reset) {
-    _tme_sun3_reset(sun3);
+    _tme_sun3_reset(sun3, 0);
   }
 
   return (TME_OK);
