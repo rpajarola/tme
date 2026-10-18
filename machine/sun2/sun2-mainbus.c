@@ -320,6 +320,7 @@ _tme_sun2_command(struct tme_element *element, const char * const * args, char *
 {
   struct tme_sun2 *sun2;
   int do_reset;
+  int rc;
 
   /* recover our sun2: */
   sun2 = (struct tme_sun2 *) element->tme_element_private;
@@ -366,6 +367,15 @@ _tme_sun2_command(struct tme_element *element, const char * const * args, char *
   }
 
   if (do_reset) {
+
+    /* return to boot state with interrupts disabled, or the CPU
+       would fetch its reset vectors through the MMU instead of from
+       the PROM: */
+    sun2->tme_sun2_enable = 0;
+    sun2->tme_sun2_buserr = 0;
+    rc = _tme_sun2_ipl_check(sun2);
+    assert(rc == TME_OK);
+    _tme_sun2_mmu_context_user_set(sun2);
 
     /* reset the CPU: */
     (*sun2->tme_sun2_m68k->tme_m68k_bus_connection.tme_bus_signal)
