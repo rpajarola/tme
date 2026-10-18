@@ -96,6 +96,27 @@ _tme_sun3_ipl_check(struct tme_sun3 *sun3)
   return (TME_OK);
 }
 
+/* this asserts or negates RESET on all busses: */
+static void
+_tme_sun3_busses_reset(struct tme_sun3 *sun3, unsigned int level)
+{
+  (*sun3->tme_sun3_obio->tme_bus_signal)
+    (sun3->tme_sun3_obio,
+     TME_BUS_SIGNAL_RESET
+     | level
+     | TME_BUS_SIGNAL_EDGE);
+  (*sun3->tme_sun3_obmem->tme_bus_signal)
+    (sun3->tme_sun3_obmem,
+     TME_BUS_SIGNAL_RESET
+     | level
+     | TME_BUS_SIGNAL_EDGE);
+  (*sun3->tme_sun3_vmebus->tme_bus_signal)
+    (sun3->tme_sun3_vmebus,
+     TME_BUS_SIGNAL_RESET
+     | level
+     | TME_BUS_SIGNAL_EDGE);
+}
+
 /* this resets the CPU and all busses, and sets the bus error
    register to tell the PROM why.  the machine first returns to boot
    state with interrupts disabled, or the CPU would fetch its reset
@@ -118,21 +139,7 @@ _tme_sun3_reset(struct tme_sun3 *sun3, tme_uint8_t buserr)
      | TME_BUS_SIGNAL_EDGE);
 
   /* reset all busses: */
-  (*sun3->tme_sun3_obio->tme_bus_signal)
-    (sun3->tme_sun3_obio,
-     TME_BUS_SIGNAL_RESET
-     | TME_BUS_SIGNAL_LEVEL_NEGATED
-     | TME_BUS_SIGNAL_EDGE);
-  (*sun3->tme_sun3_obmem->tme_bus_signal)
-    (sun3->tme_sun3_obmem,
-     TME_BUS_SIGNAL_RESET
-     | TME_BUS_SIGNAL_LEVEL_NEGATED
-     | TME_BUS_SIGNAL_EDGE);
-  (*sun3->tme_sun3_vmebus->tme_bus_signal)
-    (sun3->tme_sun3_vmebus,
-     TME_BUS_SIGNAL_RESET
-     | TME_BUS_SIGNAL_LEVEL_NEGATED
-     | TME_BUS_SIGNAL_EDGE);
+  _tme_sun3_busses_reset(sun3, TME_BUS_SIGNAL_LEVEL_NEGATED);
 }
 
 /* this handles the CPU halting.  on a real sun3, the watchdog then
@@ -293,21 +300,7 @@ _tme_sun3_bus_signal(struct tme_bus_connection *conn_bus_raiser, unsigned int si
       _tme_sun3_ipl_check(sun3);
 
       /* propagate this reset edge to all busses: */
-      (*sun3->tme_sun3_obio->tme_bus_signal)
-	(sun3->tme_sun3_obio,
-	 TME_BUS_SIGNAL_RESET
-	 | TME_BUS_SIGNAL_LEVEL_NEGATED
-	 | TME_BUS_SIGNAL_EDGE);
-      (*sun3->tme_sun3_obmem->tme_bus_signal)
-	(sun3->tme_sun3_obmem,
-	 TME_BUS_SIGNAL_RESET
-	 | TME_BUS_SIGNAL_LEVEL_NEGATED
-	 | TME_BUS_SIGNAL_EDGE);
-      (*sun3->tme_sun3_vmebus->tme_bus_signal)
-	(sun3->tme_sun3_vmebus,
-	 TME_BUS_SIGNAL_RESET
-	 | TME_BUS_SIGNAL_LEVEL_NEGATED
-	 | TME_BUS_SIGNAL_EDGE);
+      _tme_sun3_busses_reset(sun3, TME_BUS_SIGNAL_LEVEL_NEGATED);
     }
   }
 
@@ -514,6 +507,11 @@ _tme_sun3_command(struct tme_element *element, const char * const * args, char *
 
     /* powering up again loses what doesn't survive losing power: */
     tme_power_cycle();
+
+    /* assert RESET on all busses, so their devices stop, before
+       resetting the board negates it.  a device left running, like
+       an Ethernet chip doing DMA, would keep changing memory: */
+    _tme_sun3_busses_reset(sun3, TME_BUS_SIGNAL_LEVEL_ASSERTED);
     _tme_sun3_reset(sun3, 0);
   }
 

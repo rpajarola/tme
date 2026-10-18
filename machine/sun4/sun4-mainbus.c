@@ -289,19 +289,51 @@ _tme_sun4_bus_intack(struct tme_bus_connection *conn_sparc, unsigned int ipl, in
   return (rc);
 }
 
+/* this asserts or negates RESET on all busses: */
+static void
+_tme_sun4_busses_reset(struct tme_sun4 *sun4, unsigned int level)
+{
+  (*sun4->tme_sun4_32_obio->tme_bus_signal)
+    (sun4->tme_sun4_32_obio,
+     TME_BUS_SIGNAL_RESET
+     | level
+     | TME_BUS_SIGNAL_EDGE);
+  if (!TME_SUN4_IS_SUN4C(sun4)) {
+    (*sun4->tme_sun4_32_obmem->tme_bus_signal)
+      (sun4->tme_sun4_32_obmem,
+       TME_BUS_SIGNAL_RESET
+       | level
+       | TME_BUS_SIGNAL_EDGE);
+  }
+  if (TME_SUN4_IS_SUN4(sun4)) {
+    (*sun4->tme_sun4_vmebus->tme_bus_signal)
+      (sun4->tme_sun4_vmebus,
+       TME_BUS_SIGNAL_RESET
+       | level
+       | TME_BUS_SIGNAL_EDGE);
+  }
+}
+
 /* this resets the board: */
 int
 _tme_sun4_reset(struct tme_sun4 *sun4, int soft)
 {
 
-  /* clear the sun4/4c enable register: */
-  sun4->tme_sun44c_enable = 0;
+  /* clear the sun4/4c enable register, except for the sun4
+     diagnostic switch.  this returns to boot state, or the CPU would
+     fetch its reset vectors through the MMU instead of from the
+     PROM: */
+  _tme_sun44c_enable_set(sun4,
+			 (TME_SUN4_IS_SUN4C(sun4)
+			  ? 0
+			  : (sun4->tme_sun44c_enable & TME_SUN4_ENA_DIAG)));
   
   /* clear the sun4/4c interrupt register: */
   sun4->tme_sun44c_ints = 0;
 
   /* clear any NMI: */
   sun4->tme_sun4_int_signals[TME_SPARC_IPL_NMI / 8] &= ~TME_BIT(TME_SPARC_IPL_NMI % 8);
+  _tme_sun4_ipl_check(sun4);
 
   /* reset the CPU: */
   (*sun4->tme_sun4_sparc->tme_sparc_bus_connection.tme_bus_signal)
@@ -311,25 +343,7 @@ _tme_sun4_reset(struct tme_sun4 *sun4, int soft)
      | TME_BUS_SIGNAL_EDGE);
 
   /* reset all busses: */
-  (*sun4->tme_sun4_32_obio->tme_bus_signal)
-    (sun4->tme_sun4_32_obio,
-     TME_BUS_SIGNAL_RESET
-     | TME_BUS_SIGNAL_LEVEL_NEGATED
-     | TME_BUS_SIGNAL_EDGE);
-  if (!TME_SUN4_IS_SUN4C(sun4)) {
-    (*sun4->tme_sun4_32_obmem->tme_bus_signal)
-      (sun4->tme_sun4_32_obmem,
-       TME_BUS_SIGNAL_RESET
-       | TME_BUS_SIGNAL_LEVEL_NEGATED
-       | TME_BUS_SIGNAL_EDGE);
-  }
-  if (TME_SUN4_IS_SUN4(sun4)) {
-    (*sun4->tme_sun4_vmebus->tme_bus_signal)
-      (sun4->tme_sun4_vmebus,
-       TME_BUS_SIGNAL_RESET
-       | TME_BUS_SIGNAL_LEVEL_NEGATED
-       | TME_BUS_SIGNAL_EDGE);
-  }
+  _tme_sun4_busses_reset(sun4, TME_BUS_SIGNAL_LEVEL_NEGATED);
 
   /* in case this reset was caused by a bus cycle, be sure to tell the
      initiator to check for a synchronous event: */
@@ -426,6 +440,20 @@ _tme_sun4_command(struct tme_element *element, const char * const * args, char *
 
     /* powering up again loses what doesn't survive losing power: */
     tme_power_cycle();
+
+    /* the sun4c error registers start out clear: */
+    sun4->tme_sun4c_sync_err = 0;
+    sun4->tme_sun4c_sync_vaddr = 0;
+    sun4->tme_sun4c_async_err = 0;
+    sun4->tme_sun4c_async_vaddr = 0;
+    sun4->tme_sun4c_async_data_lo = 0;
+    sun4->tme_sun4c_async_data_hi = 0;
+
+    /* assert RESET on all busses, so their devices stop, before
+       resetting the board negates it.  a device left running, like
+       an Ethernet chip doing DMA, would cause errors when the board
+       resets: */
+    _tme_sun4_busses_reset(sun4, TME_BUS_SIGNAL_LEVEL_ASSERTED);
     _tme_sun4_reset(sun4, FALSE);
   }
 

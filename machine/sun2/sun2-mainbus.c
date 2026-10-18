@@ -139,6 +139,41 @@ _tme_sun2_int_raised(struct tme_sun2 *sun2,
   return (asserted_any);
 }
 
+/* this asserts or negates RESET on all busses: */
+static void
+_tme_sun2_busses_reset(struct tme_sun2 *sun2, unsigned int level)
+{
+  (*sun2->tme_sun2_obio->tme_bus_signal)
+    (sun2->tme_sun2_obio,
+     TME_BUS_SIGNAL_RESET
+     | level
+     | TME_BUS_SIGNAL_EDGE);
+  (*sun2->tme_sun2_obmem->tme_bus_signal)
+    (sun2->tme_sun2_obmem,
+     TME_BUS_SIGNAL_RESET
+     | level
+     | TME_BUS_SIGNAL_EDGE);
+  if (sun2->tme_sun2_has_vme) {
+    (*sun2->tme_sun2_vmebus->tme_bus_signal)
+      (sun2->tme_sun2_vmebus,
+       TME_BUS_SIGNAL_RESET
+       | level
+       | TME_BUS_SIGNAL_EDGE);
+  }
+  else {
+    (*sun2->tme_sun2_mbio->tme_bus_signal)
+      (sun2->tme_sun2_mbio,
+       TME_BUS_SIGNAL_RESET
+       | level
+       | TME_BUS_SIGNAL_EDGE);
+    (*sun2->tme_sun2_mbmem->tme_bus_signal)
+      (sun2->tme_sun2_mbmem,
+       TME_BUS_SIGNAL_RESET
+       | level
+       | TME_BUS_SIGNAL_EDGE);
+  }
+}
+
 /* our mainbus signal handler: */
 static int
 _tme_sun2_bus_signal(struct tme_bus_connection *conn_bus_raiser, unsigned int signal)
@@ -185,35 +220,7 @@ _tme_sun2_bus_signal(struct tme_bus_connection *conn_bus_raiser, unsigned int si
     if (conn_bus_raiser->tme_bus_connection.tme_connection_other
 	== &sun2->tme_sun2_m68k->tme_m68k_bus_connection.tme_bus_connection
 	&& !signal_asserted) {
-      (*sun2->tme_sun2_obio->tme_bus_signal)
-	(sun2->tme_sun2_obio,
-	 TME_BUS_SIGNAL_RESET
-	 | TME_BUS_SIGNAL_LEVEL_NEGATED
-	 | TME_BUS_SIGNAL_EDGE);
-      (*sun2->tme_sun2_obmem->tme_bus_signal)
-	(sun2->tme_sun2_obmem,
-	 TME_BUS_SIGNAL_RESET
-	 | TME_BUS_SIGNAL_LEVEL_NEGATED
-	 | TME_BUS_SIGNAL_EDGE);
-      if (sun2->tme_sun2_has_vme) {
-	(*sun2->tme_sun2_vmebus->tme_bus_signal)
-	  (sun2->tme_sun2_vmebus,
-	   TME_BUS_SIGNAL_RESET
-	   | TME_BUS_SIGNAL_LEVEL_NEGATED
-	   | TME_BUS_SIGNAL_EDGE);
-      }
-      else {
-	(*sun2->tme_sun2_mbio->tme_bus_signal)
-	  (sun2->tme_sun2_mbio,
-	   TME_BUS_SIGNAL_RESET
-	   | TME_BUS_SIGNAL_LEVEL_NEGATED
-	   | TME_BUS_SIGNAL_EDGE);
-	(*sun2->tme_sun2_mbmem->tme_bus_signal)
-	  (sun2->tme_sun2_mbmem,
-	   TME_BUS_SIGNAL_RESET
-	   | TME_BUS_SIGNAL_LEVEL_NEGATED
-	   | TME_BUS_SIGNAL_EDGE);
-      }
+      _tme_sun2_busses_reset(sun2, TME_BUS_SIGNAL_LEVEL_NEGATED);
     }
   }
 
@@ -380,6 +387,11 @@ _tme_sun2_command(struct tme_element *element, const char * const * args, char *
     assert(rc == TME_OK);
     _tme_sun2_mmu_context_user_set(sun2);
 
+    /* assert RESET on all busses, so their devices stop, before
+       resetting the CPU and negating it.  a device left running, like
+       a disk controller doing DMA, would keep changing memory: */
+    _tme_sun2_busses_reset(sun2, TME_BUS_SIGNAL_LEVEL_ASSERTED);
+
     /* reset the CPU: */
     (*sun2->tme_sun2_m68k->tme_m68k_bus_connection.tme_bus_signal)
       (&sun2->tme_sun2_m68k->tme_m68k_bus_connection,
@@ -388,35 +400,7 @@ _tme_sun2_command(struct tme_element *element, const char * const * args, char *
        | TME_BUS_SIGNAL_EDGE);
 
     /* reset all busses: */
-    (*sun2->tme_sun2_obio->tme_bus_signal)
-      (sun2->tme_sun2_obio,
-       TME_BUS_SIGNAL_RESET
-       | TME_BUS_SIGNAL_LEVEL_NEGATED
-       | TME_BUS_SIGNAL_EDGE);
-    (*sun2->tme_sun2_obmem->tme_bus_signal)
-      (sun2->tme_sun2_obmem,
-       TME_BUS_SIGNAL_RESET
-       | TME_BUS_SIGNAL_LEVEL_NEGATED
-       | TME_BUS_SIGNAL_EDGE);
-    if (sun2->tme_sun2_has_vme) {
-      (*sun2->tme_sun2_vmebus->tme_bus_signal)
-	(sun2->tme_sun2_obmem,
-	 TME_BUS_SIGNAL_RESET
-	 | TME_BUS_SIGNAL_LEVEL_NEGATED
-	 | TME_BUS_SIGNAL_EDGE);
-    }
-    else {
-      (*sun2->tme_sun2_mbio->tme_bus_signal)
-	(sun2->tme_sun2_mbio,
-	 TME_BUS_SIGNAL_RESET
-	 | TME_BUS_SIGNAL_LEVEL_NEGATED
-	 | TME_BUS_SIGNAL_EDGE);
-      (*sun2->tme_sun2_mbmem->tme_bus_signal)
-	(sun2->tme_sun2_mbmem,
-	 TME_BUS_SIGNAL_RESET
-	 | TME_BUS_SIGNAL_LEVEL_NEGATED
-	 | TME_BUS_SIGNAL_EDGE);
-    }
+    _tme_sun2_busses_reset(sun2, TME_BUS_SIGNAL_LEVEL_NEGATED);
   }
 
   return (TME_OK);

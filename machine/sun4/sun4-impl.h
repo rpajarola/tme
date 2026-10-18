@@ -439,6 +439,7 @@ void _tme_sun4_timer_int_force _TME_P((struct tme_sun4 *, struct tme_sun4_timer 
 
 /* other prototypes: */
 int _tme_sun44c_control_cycle_handler _TME_P((void *, struct tme_bus_cycle *));
+void _tme_sun44c_enable_set _TME_P((struct tme_sun4 *, tme_uint8_t));
 int _tme_sun44c_intreg_cycle_control _TME_P((void *, struct tme_bus_cycle *));
 int _tme_sun4c_auxreg_cycle_control _TME_P((void *, struct tme_bus_cycle *));
 int _tme_sun4_ipl_check _TME_P((struct tme_sun4 *));

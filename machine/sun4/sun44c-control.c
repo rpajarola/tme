@@ -39,6 +39,38 @@ _TME_RCSID("$Id: sun44c-control.c,v 1.3 2007/03/29 01:17:49 fredette Exp $");
 /* includes: */
 #include "sun4-impl.h"
 
+/* this sets the enable register, and calls out the changes: */
+void
+_tme_sun44c_enable_set(struct tme_sun4 *sun4, tme_uint8_t enable_new)
+{
+  tme_uint8_t enable_old;
+
+  /* set the new value of the enable register: */
+  enable_old = sun4->tme_sun44c_enable;
+  sun4->tme_sun44c_enable = enable_new;
+
+  /* if we're changing to or from boot state: */
+  if ((enable_old ^ enable_new) & TME_SUN44C_ENA_NOTBOOT) {
+
+    /* make a pseudo-context change: */
+    _tme_sun44c_mmu_context_set(sun4);
+
+    /* set the FPU strictness: */
+    ((*sun4->tme_sun4_sparc->tme_sparc_bus_fpu_strict)
+     (sun4->tme_sun4_sparc, !(enable_new & TME_SUN44C_ENA_NOTBOOT)));
+  }
+
+  /* if we're changing the cache enable, call out the change: */
+  if ((enable_old ^ enable_new) & TME_SUN44C_ENA_CACHE) {
+    _tme_sun44c_cache_enable_change(sun4);
+  }
+
+  /* if we're enabling or disabling system DVMA, call out the change: */
+  if ((enable_old ^ enable_new) & TME_SUN44C_ENA_SDVMA) {
+    _tme_sun44c_mmu_sdvma_change(sun4);
+  }
+}
+
 /* the bus cycle handler for control spaces: */
 int
 _tme_sun44c_control_cycle_handler(void *_sun4_asi, struct tme_bus_cycle *cycle_init)
@@ -300,28 +332,7 @@ _tme_sun44c_control_cycle_handler(void *_sun4_asi, struct tme_bus_cycle *cycle_i
 	}
 
 	/* set the new value of the enable register: */
-	sun4->tme_sun44c_enable = enable_new;
-
-	/* if we're changing to or from boot state: */
-	if ((enable_old ^ enable_new) & TME_SUN44C_ENA_NOTBOOT) {
-
-	  /* make a pseudo-context change: */
-	  _tme_sun44c_mmu_context_set(sun4);
-
-	  /* set the FPU strictness: */
-	  ((*sun4->tme_sun4_sparc->tme_sparc_bus_fpu_strict)
-	   (sun4->tme_sun4_sparc, !(enable_new & TME_SUN44C_ENA_NOTBOOT)));
-	}
-
-	/* if we're changing the cache enable, call out the change: */
-	if ((enable_old ^ enable_new) & TME_SUN44C_ENA_CACHE) {
-	  _tme_sun44c_cache_enable_change(sun4);
-	}
-
-	/* if we're enabling or disabling system DVMA, call out the change: */
-	if ((enable_old ^ enable_new) & TME_SUN44C_ENA_SDVMA) {
-	  _tme_sun44c_mmu_sdvma_change(sun4);
-	}
+	_tme_sun44c_enable_set(sun4, enable_new);
 
 	/* sun4c-specific enable register changes: */
 	if (TME_SUN4_IS_SUN4C(sun4)) {
