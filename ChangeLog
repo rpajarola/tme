@@ -1,3 +1,69 @@
+2026-10-19  Rico Pajarola  <rp@servium.ch>
+
+	* Release 1.1.0.
+
+	* configure.ac: Bumped version to 1.1.0.
+
+	* host/display/sdl/: Rewrote the SDL display, which can now stand
+	in for the GTK display.  It handles HiDPI screens, maps keys by
+	name for any keyboard layout, captures the mouse with a click and
+	releases it with Ctrl+Shift+Alt (Ctrl+Shift+Cmd on macOS), and
+	rings the bell.  It draws a menu bar, a status line and its own
+	quit and error dialogs in its window, in the Spleen bitmap font,
+	so the machine keeps running while they are open; F10 opens the
+	menus from the keyboard.  The Media menu uses the desktop's file
+	chooser (osascript, zenity or kdialog).
+
+	* host/display/display-menu.c, host/display/gtk/gtk-menu.c: The
+	Screen, Media and Devices menus, and the status line, are now
+	shared, and both the GTK and SDL displays build theirs from them.
+	A tape can be loaded from a folder with Load Tape Folder.
+
+	* host/display/display-capture.c: Screenshots and recordings moved
+	from the GTK display into shared code, so the SDL display has them
+	too.  PNG files are written without cairo, compressed with zlib if
+	configure finds it.
+
+	* host/display/display-keysym.c, host/display/keysym-names.sh: Look
+	up keysym names from a table made from the X11 headers instead of
+	with GDK, so the display library and the SDL and RFB displays no
+	longer link GTK.
+
+	* host/display/display-keyboard.c, host/display/display-mouse.c:
+	Key and mouse events from the SDL and RFB displays got times in
+	nanoseconds instead of milliseconds, and key events had every
+	modifier pressed, so the emulated machine got control characters.
+
+	* configure.ac: The GTK and SDL displays are each built only if
+	found, with a warning otherwise; a display listed with
+	--enable-hosts must still be found.  GLIB is only required for
+	the GLIB threads.
+
+	* machine/*/: The example machines have a line for the SDL display
+	next to the GTK one, and there are SUN4-75-sdl-bw2 and
+	SUN4-75-sdl-cg3.
+
+	* libtme/control.c, tme/control.h, tmesh/tmesh-cmds.c: Elements
+	can register controls, actions and on/off switches, that the new
+	Devices menu shows.  The Sun-2, Sun-3 and Sun-4 have Reset, and
+	the Sun-3 and Sun-4 the Diagnostic Switch, and the Sun-3 Reset on
+	Watchdog.
+
+	* machine/sun2/sun2-mainbus.c, machine/sun3/sun3-mainbus.c,
+	machine/sun4/sun4-mainbus.c, machine/sun4/sun44c-control.c,
+	host/posix-memory.c: "power up" on a running machine, and so
+	Reset, now works like turning it off and on: RAM loses its
+	contents, the board returns to boot state, and RESET is asserted
+	on all busses, so devices doing DMA stop.  Before, the Sun-2 and
+	Sun-3 hung or stopped at the monitor prompt, and the Sun-4c
+	stopped its self test.  The Sun-2 power-up reset also signalled
+	obmem instead of the VME bus on VME machines, and the Sun-4 board
+	reset now calls out its enable register changes.
+
+	* .github/workflows/ci.yml, .github/check-displays.sh: Build every
+	push and pull request on Linux, with each combination of displays,
+	and on macOS, and build the .deb and from the make dist tarball.
+
 2026-10-15  Rico Pajarola  <rp@servium.ch>
 
 	* tools/tme-mktap.c: A FILE@BLOCK-SIZE argument sets the block
