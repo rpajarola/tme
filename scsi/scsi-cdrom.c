@@ -86,6 +86,58 @@ const struct {
   { "tme-scsi-1", tme_scsi_cdrom_tme_init },
 };
 
+/* this is the LUN addresser for CD-ROMs.  LUN zero is the drive
+   itself, so with no disc it answers NOT READY instead of ILLEGAL
+   REQUEST, except for the motor and eject commands, which a drive
+   accepts with no disc: */
+static int
+_tme_scsi_cdrom_address_lun(struct tme_scsi_device *scsi_device)
+{
+  int lun;
+
+  /* if an IDENTIFY message was sent, use that LUN: */
+  lun = scsi_device->tme_scsi_device_addressed_lun;
+
+  /* otherwise, get the LUN from bits 5-7 of the second
+     CDB byte: */
+  if (lun < 0) {
+    lun = (scsi_device->tme_scsi_device_cdb[1] >> 5);
+    scsi_device->tme_scsi_device_addressed_lun = lun;
+  }
+
+  /* if this is LUN zero with no disc, and this isn't a REQUEST
+     SENSE or INQUIRY command: */
+  if (lun == 0
+      && !(scsi_device->tme_scsi_device_luns
+	   & TME_BIT(lun))
+      && (scsi_device->tme_scsi_device_cdb[0]
+	  != TME_SCSI_CDB_REQUEST_SENSE)
+      && (scsi_device->tme_scsi_device_cdb[0]
+	  != TME_SCSI_CDB_INQUIRY)) {
+
+    /* START STOP UNIT and PREVENT ALLOW succeed: */
+    if ((scsi_device->tme_scsi_device_cdb[0]
+	 == TME_SCSI_CDB_CDROM_START_STOP)
+	|| (scsi_device->tme_scsi_device_cdb[0]
+	    == TME_SCSI_CDB_CDROM_PREVENT_ALLOW)) {
+      tme_scsi_device_target_do_smf(scsi_device,
+				    TME_SCSI_STATUS_GOOD,
+				    TME_SCSI_MSG_CMD_COMPLETE);
+    }
+
+    /* anything else gets a NOT READY, MEDIUM NOT PRESENT CHECK
+       CONDITION: */
+    else {
+      tme_scsi_device_check_condition(scsi_device,
+				      TME_SCSI_SENSE_EXT_KEY_NOT_READY,
+				      TME_SCSI_SENSE_EXT_ASC_ASCQ_MEDIUM_NOT_PRESENT);
+    }
+    return (EINVAL);
+  }
+
+  return (tme_scsi_device_address_lun_aware(scsi_device));
+}
+
 /* this implements the CD-ROM INQUIRY command: */
 _TME_SCSI_DEVICE_CDB_DECL(tme_scsi_cdrom_cdb_inquiry)
 {
@@ -588,6 +640,8 @@ TME_ELEMENT_SUB_NEW_DECL(tme_scsi,cdrom) {
   scsi_device = &scsi_cdrom->tme_scsi_cdrom_device;
   rc = tme_scsi_device_new(scsi_device, id);
   assert (rc == TME_OK);
+  scsi_device->tme_scsi_device_address_lun
+    = _tme_scsi_cdrom_address_lun;
 
   scsi_device->tme_scsi_device_vendor
     = tme_strdup((vendor == NULL)
