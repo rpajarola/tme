@@ -180,6 +180,8 @@ _tme_3c400_callout(struct tme_3c400 *_3c400, int new_callouts)
   tme_ethernet_fid_t frame_id;
   tme_uint8_t *rbuf;
   tme_uint16_t status;
+  tme_uint32_t crc;
+  unsigned int crc_i;
   struct tme_ethernet_frame_chunk *frame_chunk, frame_chunk_buffer;
   int int_asserted;
   
@@ -383,10 +385,23 @@ _tme_3c400_callout(struct tme_3c400 *_3c400, int new_callouts)
 	    status |= TME_3C400_RBUF_BROADCAST;
 	  }
 			  
-	  /* put in the offset of the first free byte in the status.
-	     make sure we present a packet that is at least as big
-	     as the smallest Ethernet frame: */
-	  rc = TME_MAX(rc, TME_ETHERNET_FRAME_MIN - TME_ETHERNET_CRC_SIZE);
+	  /* pad the frame to the smallest Ethernet frame, and append
+	     its CRC.  the card stores the CRC with the frame, and
+	     drivers subtract its size from the offset in the status: */
+	  rc = TME_MIN(rc, TME_3C400_SIZ_BUF - TME_3C400_SIZ_BUF_STATUS - TME_ETHERNET_CRC_SIZE);
+	  if (rc < TME_ETHERNET_FRAME_MIN - TME_ETHERNET_CRC_SIZE) {
+	    memset(rbuf + TME_3C400_SIZ_BUF_STATUS + rc,
+		   0,
+		   TME_ETHERNET_FRAME_MIN - TME_ETHERNET_CRC_SIZE - rc);
+	    rc = TME_ETHERNET_FRAME_MIN - TME_ETHERNET_CRC_SIZE;
+	  }
+	  crc = ~tme_ethernet_crc32_el(rbuf + TME_3C400_SIZ_BUF_STATUS, rc);
+	  for (crc_i = 0; crc_i < TME_ETHERNET_CRC_SIZE; crc_i++) {
+	    rbuf[TME_3C400_SIZ_BUF_STATUS + rc++] = (tme_uint8_t) crc;
+	    crc >>= 8;
+	  }
+
+	  /* put in the offset of the first free byte in the status: */
 	  status |= TME_3C400_SIZ_BUF_STATUS + rc;
 
 	  /* put in the status: */
