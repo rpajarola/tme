@@ -181,6 +181,15 @@ _TME_RCSID("$Id: ncr53c9x.c,v 1.5 2010/06/05 15:50:40 fredette Exp $");
 #define TME_NCR53C9X_CONTROL2_LSP	TME_BIT(6)
 #define TME_NCR53C9X_CONTROL2_DAE	TME_BIT(7)
 
+/* the bits in Control register two that the ESP100A has.  it doesn't
+   latch the SCSI bus phase, and bits five through seven read as
+   zero: */
+#define TME_NCR53C9X_CONTROL2_ESP100A	(TME_NCR53C9X_CONTROL2_PGDP	\
+					 | TME_NCR53C9X_CONTROL2_PGRP	\
+					 | TME_NCR53C9X_CONTROL2_ACDPE	\
+					 | TME_NCR53C9X_CONTROL2_S2FE	\
+					 | TME_NCR53C9X_CONTROL2_TSDR)
+
 /* bits in Control register three: */
 #define TME_NCR53C9X_CONTROL3_BS8	TME_BIT(0)
 #define TME_NCR53C9X_CONTROL3_MDM	TME_BIT(1)
@@ -3015,7 +3024,6 @@ _tme_ncr53c9x_bus_cycle(void *_ncr53c9x,
     case TME_NCR53C9X_REG_CTC_MSB:
     case TME_NCR53C9X_REG_CFIS:
     case TME_NCR53C9X_REG_CONTROL1:
-    case TME_NCR53C9X_REG_CONTROL3:
       value = ncr53c9x->tme_ncr53c9x_regs[address];
       break;
 
@@ -3134,7 +3142,18 @@ _tme_ncr53c9x_bus_cycle(void *_ncr53c9x,
 
 	/* the ESP100 doesn't have Control register two: */
       case TME_NCR53C9X_VARIANT_ESP100: value = 0xff; break;
+
+      case TME_NCR53C9X_VARIANT_ESP100A:
+	value = ncr53c9x->tme_ncr53c9x_regs[address];
+	break;
       }
+      break;
+
+      /* neither the ESP100 nor the ESP100A has Control register
+	 three.  drivers tell an ESP100A from later chips by whether
+	 it keeps what was written to it: */
+    case TME_NCR53C9X_REG_CONTROL3:
+      value = 0xff;
       break;
 
       /* an unknown register: */
@@ -3182,7 +3201,6 @@ _tme_ncr53c9x_bus_cycle(void *_ncr53c9x,
     case TME_NCR53C9X_REG_SYNCH_OFFSET:
     case TME_NCR53C9X_REG_CONTROL1:
     case TME_NCR53C9X_REG_CLOCK_FACTOR:
-    case TME_NCR53C9X_REG_CONTROL3:
     case TME_NCR53C9X_REG_ALIGN:
       ncr53c9x->tme_ncr53c9x_regs[address] = value;
       break;
@@ -3284,7 +3302,17 @@ _tme_ncr53c9x_bus_cycle(void *_ncr53c9x,
 
 	/* the ESP100 doesn't have Control register two: */
       case TME_NCR53C9X_VARIANT_ESP100: break;
+
+      case TME_NCR53C9X_VARIANT_ESP100A:
+	ncr53c9x->tme_ncr53c9x_regs[address]
+	  = (value & TME_NCR53C9X_CONTROL2_ESP100A);
+	break;
       }
+      break;
+
+      /* neither the ESP100 nor the ESP100A has Control register
+	 three: */
+    case TME_NCR53C9X_REG_CONTROL3:
       break;
 
       /* an unknown register: */

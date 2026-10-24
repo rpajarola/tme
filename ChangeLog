@@ -1,5 +1,14 @@
 2026-10-24  Rico Pajarola  <rp@servium.ch>
 
+	* ic/ncr53c9x.c: Implemented the ESP100A variant, which only had
+	its argument: it keeps bits 0 through 4 of Control register two,
+	and doesn't latch the SCSI bus phase.  Neither the ESP100 nor the
+	ESP100A has Control register three any more, so drivers that tell
+	the chips apart by which registers keep their values, like
+	NetBSD's, no longer take an ESP100A for a later chip.
+
+	* machine/sun4/SUN4-75*: The SS2's esp is an ESP100A.
+
 	* ic/sparc/mb86900.c, ic/sparc/cy7c601.c, ic/sparc/stp103x.c:
 	Unassigned format three opcodes now take an illegal_instruction
 	trap.  Their opcode table entries were NULL, so a guest that ran

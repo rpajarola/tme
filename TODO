@@ -3,10 +3,6 @@ no longer apply were removed, and the rest are grouped below.
 
 * needs testing with a guest
 
-ncr53c9x: the SS2 esp is really an ESP100A, not an ESP100.  the
-ESP100A variant is implemented, but the SUN4-75 configurations still
-say "variant esp100".
-
 SUN-ULTRA-1: make the onboard esp0 revision 2, and the onboard
 ncr53c9x a variant esp200 (which isn't implemented yet).
 

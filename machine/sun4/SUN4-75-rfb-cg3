@@ -40,7 +40,7 @@ board0 auxreg at mainbus0 addr 0xf7400003
 ##
 esp0 at sbus0 slot 0 offset 0x800000 ipl 3: tme/ic/lsi64854 revision "1+" channel scsi
 esp0 dma at sbus0 slot 0 offset 0x400000
-ncr0 at esp0 master: tme/ic/ncr53c9x variant esp100
+ncr0 at esp0 master: tme/ic/ncr53c9x variant esp100a
 scsibus0 at ncr0: tme/scsi/bus
 
 ## the SBus LANCE Ethernet:
