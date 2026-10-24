@@ -15,7 +15,16 @@ libtmesh_la_SOURCES = \
 libtmesh_la_LIBADD = $(top_builddir)/libtme/libtme.la
 
 bin_PROGRAMS = tmesh
+tmesh_SOURCES = tmesh.c
 tmesh_LDADD = libtmesh.la $(LDADD) $(TME_READLINE_LIBS)
+
+# with SDL, tmesh has the window for choosing, making and editing
+# machines:
+if TMESH_WINDOW
+AM_CPPFLAGS += -DTMESH_WINDOW $(SDL_CFLAGS)
+tmesh_SOURCES += tmesh-window.c tmesh-window.h tmesh-config.c tmesh-config.h microui.c microui.h
+tmesh_LDADD += $(SDL_LIBS)
+endif
 tmesh_LDFLAGS = -dlpreopen force -dlopen self
 include $(top_srcdir)/tme-preopen.txt
 EXTRA_tmesh_DEPENDENCIES = $(TME_HOST_PREOPEN_DEPS)

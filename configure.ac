@@ -842,6 +842,8 @@ fi
 if test "x${enable_sdl}" = xyes; then
    TME_DISPLAY_HOSTS="sdl ${TME_DISPLAY_HOSTS}"
 fi
+dnl with SDL, tmesh has the machine window:
+AM_CONDITIONAL([TMESH_WINDOW], [test "x${enable_sdl}" = xyes])
 if test "x${enable_gtk}${enable_sdl}" = xnono; then
    AC_MSG_WARN([neither GTK 3 nor SDL 2 was found, so there will be no display for emulated screens])
 fi

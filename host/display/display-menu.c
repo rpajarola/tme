@@ -33,7 +33,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <dirent.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #ifdef HAVE_STDARG_H
 #include <stdarg.h>
 #else  /* HAVE_STDARG_H */
@@ -384,6 +388,44 @@ _tme_display_menu_quit(struct tme_screen *screen,
 		       struct tme_display_menu_item *item)
 {
   (*screen->tme_screen_display->tme_screen_quit)(screen);
+}
+
+/* this opens tmesh's machine window on the machine's script, in
+   another tmesh, so the machine keeps running.  tmesh says where the
+   script is, and where tmesh is, in the environment: */
+static void
+_tme_display_menu_edit_config(struct tme_screen *screen,
+			      struct tme_display_menu_item *item)
+{
+  const char *program, *config;
+  pid_t pid;
+  int fd;
+
+  program = getenv("TMESH_PROGRAM");
+  config = getenv("TMESH_CONFIG");
+  if (program == NULL || config == NULL) {
+    return;
+  }
+
+  /* the window runs in a grandchild, which init reaps: */
+  pid = fork();
+  if (pid == 0) {
+    if (fork() == 0) {
+      setsid();
+      fd = open("/dev/null", O_RDWR);
+      if (fd >= 0) {
+	dup2(fd, STDIN_FILENO);
+      }
+      execl(program, program, "--edit", config, "--running", (char *) NULL);
+      _exit(127);
+    }
+    _exit(0);
+  }
+  if (pid < 0) {
+    _tme_display_message(screen, _("Could not open the machine window: %s"), strerror(errno));
+    return;
+  }
+  while (waitpid(pid, NULL, 0) < 0 && errno == EINTR);
 }
 
 /* this checks the Scale item for the screen's scaling: */
@@ -932,6 +974,11 @@ _tme_display_menus_new(struct tme_screen *screen)
   menus->tme_display_menus_record = item;
   _tme_display_menu_append(menu, TME_DISPLAY_MENU_ITEM_SEPARATOR,
 			   NULL, NULL, NULL);
+  item = _tme_display_menu_append(menu, TME_DISPLAY_MENU_ITEM_ACTION,
+				  _("Edit Configuration..."),
+				  _tme_display_menu_edit_config, NULL);
+  item->tme_display_menu_item_enabled
+    = (getenv("TMESH_PROGRAM") != NULL && getenv("TMESH_CONFIG") != NULL);
   item = _tme_display_menu_append(menu, TME_DISPLAY_MENU_ITEM_ACTION,
 				  _("Quit"), _tme_display_menu_quit, NULL);
   item->tme_display_menu_item_shortcut = tme_strdup(TME_DISPLAY_MENU_QUIT_SHORTCUT);

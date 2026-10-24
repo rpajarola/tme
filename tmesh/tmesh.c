@@ -41,11 +41,16 @@ _TME_RCSID("$Id: tmesh.c,v 1.4 2009/08/30 17:06:38 fredette Exp $");
 #include <tme/tmesh.h>
 #include <tme/hash.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#ifdef TMESH_WINDOW
+#include "tmesh-window.h"
+#endif /* TMESH_WINDOW */
 #ifdef HAVE_READLINE
 #include <signal.h>
 #include <time.h>
-#include <unistd.h>
 #include <readline/readline.h>
 #include <readline/history.h>
 #endif /* HAVE_READLINE */
@@ -83,6 +88,7 @@ struct _tmesh_log_message_binary {
 
 /* globals: */
 const char *argv0;
+static const char *argv0_full;
 
 /* our shell instance: */
 static void *_tmesh;
@@ -701,6 +707,51 @@ _tmesh_th(int *interactive)
   tme_thread_exit(NULL);
 }
 
+#ifdef TMESH_WINDOW
+/* this tells the machine's display where its script is, and how to
+   run tmesh again, for its Edit Configuration... menu item: */
+static void
+_tmesh_set_config(const char *script)
+{
+  const char *path, *colon;
+  char *real, file[4096];
+  size_t length;
+
+  real = realpath(script, NULL);
+  if (real == NULL) {
+    return;
+  }
+  setenv("TMESH_CONFIG", real, 1);
+  free(real);
+
+  /* find tmesh itself: */
+  real = NULL;
+  if (strchr(argv0_full, '/') != NULL) {
+    real = realpath(argv0_full, NULL);
+  }
+  else {
+    for (path = getenv("PATH"); real == NULL && path != NULL && *path != '\0'; path = colon + 1) {
+      colon = strchr(path, ':');
+      if (colon == NULL) {
+	colon = path + strlen(path);
+      }
+      length = colon - path;
+      snprintf(file, sizeof(file), "%.*s/%s", (int) length, path, argv0_full);
+      if (length > 0 && access(file, X_OK) == 0) {
+	real = realpath(file, NULL);
+      }
+      if (*colon == '\0') {
+	break;
+      }
+    }
+  }
+  if (real != NULL) {
+    setenv("TMESH_PROGRAM", real, 1);
+    free(real);
+  }
+}
+#endif /* TMESH_WINDOW */
+
 static void
 do_usage(const char *prog_name, char *msg)
 {
@@ -710,6 +761,12 @@ do_usage(const char *prog_name, char *msg)
                    \nwhere OPTIONS are:			   \
                    \n--log LOGFILE          log to LOGFILE		\
                    \n-c, --noninteractive   read no commands from standard input (<INITIAL-CONFIG> required here)\n", prog_name);
+#ifdef TMESH_WINDOW
+  fprintf(stderr,
+	  "--edit [SCRIPT]        open the machine window (on SCRIPT's machine, or a new one there)\n"
+	  "--shell                without <INITIAL-CONFIG>, read commands instead of opening the window\n"
+	  "with no <INITIAL-CONFIG>, tmesh opens the machine window, unless commands are piped in\n");
+#endif /* TMESH_WINDOW */
   
 #ifdef TME_THREADS_POSIX
 #define fpe(msg) fprintf(stderr, "\t%s", msg);          /* Shorter */
@@ -795,6 +852,10 @@ main(int argc, char **argv)
   char *output;
   int rc;
   tme_threadid_t tmesh_thread;
+  int edit, edit_running, shell;
+  const char *edit_path;
+  char *window_script, *slash;
+  struct stat stdin_stat;
 #ifdef TME_THREADS_POSIX
   pthread_t thread;
 #ifdef HAVE_PTHREAD_SETAFFINITY_NP
@@ -819,6 +880,12 @@ main(int argc, char **argv)
   initial_config_filename = NULL;
   log_filename = "/dev/null";
   interactive = TRUE;
+  edit = FALSE;
+  edit_running = FALSE;
+  edit_path = NULL;
+  shell = FALSE;
+  window_script = NULL;
+  argv0_full = argv[0];
   if ((argv0 = strrchr(argv[0], '/')) == NULL) argv0 = argv[0]; else argv0++;
   for (arg_i = 1;
        (arg_i < argc
@@ -891,6 +958,20 @@ main(int argc, char **argv)
 	     || !strcmp(opt, "--noninteractive")) {
       interactive = FALSE;
     }
+#ifdef TMESH_WINDOW
+    else if (!strcmp(opt, "--edit")) {
+      edit = TRUE;
+      if (arg_i + 1 < argc && *argv[arg_i + 1] != '-') {
+	edit_path = argv[++arg_i];
+      }
+    }
+    else if (!strcmp(opt, "--running")) {
+      edit_running = TRUE;
+    }
+    else if (!strcmp(opt, "--shell")) {
+      shell = TRUE;
+    }
+#endif /* TMESH_WINDOW */
     else {
       if (strcmp(opt, "-h")
 	  && strcmp(opt, "--help")
@@ -904,6 +985,50 @@ main(int argc, char **argv)
   }
   
   if (usage) do_usage(argv0, NULL);
+
+#ifdef TMESH_WINDOW
+  /* with --edit, or without a script (unless commands are piped in),
+     open the machine window.  the machine chosen there is started
+     from its folder: */
+  if (edit
+      || (arg_i == argc
+	  && !shell
+	  && interactive
+	  && !(fstat(STDIN_FILENO, &stdin_stat) == 0
+	       && (S_ISFIFO(stdin_stat.st_mode) || S_ISREG(stdin_stat.st_mode))))) {
+    if (!tmesh_window_run(edit_path, edit_running, &window_script)) {
+      if (edit) {
+	exit(1);
+      }
+      fprintf(stderr, "%s: reading commands instead (see %s --help)\n", argv0, argv0);
+    }
+    else if (window_script == NULL) {
+      exit(0);
+    }
+    else {
+
+      /* without a terminal (as when tmesh is started from the
+	 desktop), the machine runs without reading commands, since
+	 tmesh would quit at the end of its input: */
+      if (!isatty(STDIN_FILENO)) {
+	interactive = FALSE;
+      }
+      _tmesh_set_config(window_script);
+      slash = strrchr(window_script, '/');
+      if (slash != NULL) {
+	*slash = '\0';
+	if (chdir(*window_script != '\0' ? window_script : "/") != 0) {
+	  perror(window_script);
+	  exit(1);
+	}
+	window_script = slash + 1;
+      }
+    }
+  }
+  else if (arg_i + 1 == argc) {
+    _tmesh_set_config(argv[arg_i]);
+  }
+#endif /* TMESH_WINDOW */
 
   if (!strcmp(log_filename, "-")) {
     _tmesh_log = stdout;
@@ -1072,7 +1197,14 @@ main(int argc, char **argv)
 
   /* evaluate pre-threads once (to avoid synchronization problems with init code): */
   if(interactive) printf("%s> ", argv0);
-  for(rc = 0;arg_i<argc;arg_i++) {
+  rc = 0;
+  if (window_script != NULL) {
+    /* source the script of the machine chosen in the window: */
+    rc += snprintf(input_stdin->_tmesh_input_buffer + rc,
+		   sizeof(input_stdin->_tmesh_input_buffer) - rc,
+		   "source \"%s\"\n", window_script);
+  }
+  for(;arg_i<argc;arg_i++) {
     /* stuff console with the commands to source the initial config files: */
     rc += snprintf(input_stdin->_tmesh_input_buffer + rc,
 		   sizeof(input_stdin->_tmesh_input_buffer) - rc,

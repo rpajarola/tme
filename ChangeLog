@@ -1,5 +1,33 @@
 2026-10-24  Rico Pajarola  <rp@servium.ch>
 
+	* tmesh/tmesh-window.c, tmesh/tmesh-config.c: Added the machine
+	window, which tmesh opens when it's run without a script (unless
+	commands are piped in), or with --edit [SCRIPT].  It lists the
+	machines used recently, makes new ones, and edits them; a machine
+	is its tmesh script, in a folder of its own with its files.  New
+	machines start from a script that is known to work, for a
+	Sun-2/120, a Sun-3/160 or a SPARCstation 2.  The editor changes
+	the memory, the ROM and state files, the SCSI drives, the display
+	and framebuffer, the Ethernet connection, and the SPARC idle type,
+	by changing those lines of the script, and keeps every other line
+	and comment.  Saving a machine makes its missing disk images,
+	copies its ROM images into its folder (from where they were
+	chosen, or from the ROM folders set under Settings), and writes
+	its keyboard macros.  The widgets are microui's (tmesh/microui.c,
+	from rxi/microui), drawn with SDL in the SDL display's font.
+
+	* tmesh/tmesh.c: Run the machine chosen in the window from its
+	folder, and tell its display where its script is (TMESH_CONFIG)
+	and where tmesh is (TMESH_PROGRAM).  --shell reads commands
+	without a script, as tmesh did before.
+
+	* host/display/display-menu.c: Added Edit Configuration... to the
+	Screen menu, which opens the machine window on the running
+	machine's script, in another tmesh.
+
+	* configure.ac, tmesh/Makefile.am: Build the machine window when
+	SDL is found.
+
 	* ic/ncr53c9x.c: Implemented the ESP100A variant, which only had
 	its argument: it keeps bits 0 through 4 of Control register two,
 	and doesn't latch the SCSI bus phase.  Neither the ESP100 nor the

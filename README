@@ -88,6 +88,23 @@ To run GUI, keep the screen configured.  See the original tme site for more deta
 tmesh usage, as documented on the TME site should still work fine - http://people.csail.mit.edu/fredette/tme/
 More info to come on the phabrics.com website.
 
+The machine window:
+Run tmesh without a script (built with SDL 2) and it opens a window that lists your machines, makes new ones, and edits them.  A machine is its tmesh
+script (tme.cfg) in a folder of its own, with its files.  New... makes a Sun-2/120, a Sun-3/160 or a SPARCstation 2, from a script that is known to work; you
+supply the PROM image, and for the SPARCstation 2 the framebuffer's FCode ROM image, which you choose under Files, or put in a ROM folder under Settings so that new
+machines get them by themselves.  The editor changes the memory, the ROM and other files, the SCSI disks, CD-ROMs and tapes, the display and framebuffer, and the
+Ethernet connection, and keeps every other line of the script, and its comments, as they are, so it can also open scripts that you wrote (Open...).  When a machine
+is saved, its missing disk images are made (empty), its ROM images are copied into its folder, and the keyboard macros are written; the machine makes its IDPROM,
+EEPROM or NVRAM when it first starts.  Start runs the machine; while it runs, the display's Screen menu has Edit Configuration..., which opens its script in
+another window (the changes take effect when it's started again).
+
+  tmesh                    open the window (unless commands are piped in)
+  tmesh --edit [SCRIPT]    open the window on SCRIPT's machine
+  tmesh --shell            read commands, without a script, instead of opening the window
+  tmesh SCRIPT             run SCRIPT's machine, as before
+
+The window keeps its list of machines and its settings in ~/Library/Application Support/tme (macOS) or ~/.config/tme, and saves new machines in ~/TME by default.
+
 Guest platforms:
 tmesh is meant to be an extensible platform, meaning that it should be good enough to run any machine description coded according to its standards.  The standards have yet to be
 documented outside of the source code.  Right now, the only guest machines available are sun2, sun3, sun4c, and sun4u (ultra-1).  These work reasonably well right now, but stability
