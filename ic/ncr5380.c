@@ -928,10 +928,10 @@ _tme_ncr5380_callout(struct tme_ncr5380 *ncr5380, int new_callouts)
 	  /* if we're doing a DMA read: */
 	  if (cycle_type == TME_BUS_CYCLE_READ) {
 
-#ifndef NDEBUG
-	    /* we aren't doing a DMA write: */
+	    /* we aren't doing a DMA write.  _tme_ncr5380_scsi_cycle()
+	       tests this to see if the transfer was a read into the
+	       internal DMA buffer: */
 	    scsi_dma_buffer.tme_scsi_dma_in = NULL;
-#endif /* NDEBUG */
 
 	    /* if this TLB entry supports fast reading: */
 	    if (tlb.tme_bus_tlb_emulator_off_read != TME_EMULATOR_OFF_UNDEF) {
