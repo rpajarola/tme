@@ -1,3 +1,18 @@
+2026-10-24  Rico Pajarola  <rp@servium.ch>
+
+	* ic/sparc/mb86900.c, ic/sparc/cy7c601.c, ic/sparc/stp103x.c:
+	Unassigned format three opcodes now take an illegal_instruction
+	trap.  Their opcode table entries were NULL, so a guest that ran
+	one crashed tmesh.
+
+	* ic/ncr5380.c: Clear the DMA input buffer pointer for a DMA
+	write in every build, not only without NDEBUG, since the SCSI
+	cycle handler tests it to see whether to flush the internal DMA
+	buffer.
+
+	* TODO: Removed the items that are fixed or no longer apply, and
+	grouped the rest.
+
 2026-10-19  Rico Pajarola  <rp@servium.ch>
 
 	* Release 1.1.0.
