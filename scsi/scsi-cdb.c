@@ -344,10 +344,14 @@ tme_scsi_device_make_inquiry_data(struct tme_scsi_device *scsi_device,
   scsi_device->tme_scsi_device_dma.tme_scsi_dma_out = data;
   scsi_device->tme_scsi_device_dma.tme_scsi_dma_in = NULL;
 
-  /* byte 0 is the peripheral device type: */
+  /* byte 0 is the peripheral device type.  a LUN that isn't
+     supported has no device type, and answers 0x7f: */
   *(data++)
-    = (inquiry->tme_scsi_device_inquiry_type
-       | inquiry->tme_scsi_device_inquiry_lun_state);
+    = ((inquiry->tme_scsi_device_inquiry_lun_state
+	== TME_SCSI_LUN_UNSUPPORTED)
+       ? (TME_SCSI_LUN_UNSUPPORTED | 0x1f)
+       : (inquiry->tme_scsi_device_inquiry_type
+	  | inquiry->tme_scsi_device_inquiry_lun_state));
 
   /* byte 1 is the device type qualifier: */
   *(data++)

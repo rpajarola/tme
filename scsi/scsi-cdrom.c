@@ -99,10 +99,12 @@ _TME_SCSI_DEVICE_CDB_DECL(tme_scsi_cdrom_cdb_inquiry)
   /* this is a CD-ROM: */
   inquiry.tme_scsi_device_inquiry_type = TME_SCSI_TYPE_CDROM;
 
-  /* if this LUN is defined: */
+  /* if this LUN is defined.  LUN zero is the drive itself, which is
+     there even when it has no disc: */
   inquiry.tme_scsi_device_inquiry_lun_state
-    = ((scsi_device->tme_scsi_device_luns
-	& TME_BIT(lun))
+    = (((scsi_device->tme_scsi_device_luns
+	 & TME_BIT(lun))
+	|| lun == 0)
        ? TME_SCSI_LUN_PRESENT
        : TME_SCSI_LUN_UNSUPPORTED);
 
