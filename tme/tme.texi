@@ -294,12 +294,11 @@ bison (for generating tmesh input grammar)
 perl (for runtime, or compile-time if regenerating certain sources)
 
 @item
-Glib2 (if using glib threading, or automatically if GTK used)
+Glib2 (only if using glib threading)
 
 @item
-SDL2 or GTK+3, or both (for a GUI, but will work without if serial
-support available).  configure builds the display for each of them that
-it finds.
+SDL2 (for a GUI, but will work without if serial support
+available).  configure builds the SDL display if it finds SDL2.
 
 @item
 zlib (to compress screenshots) and ffmpeg (at run time, to record the
@@ -489,7 +488,6 @@ The bwtwo patch was incoporated into NetBSD 9.0.
 
 @menu
 * SDL::
-* GTK::
 * VNC::
 * Screenshots::
 @end menu
@@ -506,10 +504,10 @@ display0: tme/host/sdl/display
 
 The SDL display draws its own menu bar above the emulated screen and a
 status line below it, so the window looks the same on every host.  The
-menus have the same items as the GTK display's: the Screen menu
-scales the screen, saves screenshots and recordings (@pxref{GTK}), and
-quits, the Media menu loads and ejects removable media, and the
-Devices menu works the machine's controls (@pxref{GTK}).  When the
+Screen menu scales the screen, saves screenshots and recordings (see
+below), and quits, the Media menu loads and ejects
+removable media, and the Devices menu works the machine's controls.
+When the
 mouse isn't being used by the emulated machine, click a menu to open
 it; F10 opens the menus from the keyboard, and the arrow keys, Return
 and Escape use them.  To load media, the SDL display runs the
@@ -519,15 +517,6 @@ desktop's file chooser: @command{osascript} on macOS, and
 Click in the screen to give the mouse to the emulated machine, and
 press Ctrl+Shift+Alt (Ctrl+Shift+Cmd on macOS) to take it back.
 Cmd-Q on macOS, and Ctrl-Q elsewhere, asks whether to quit.
-
-On macOS, the SDL display needs TME configured with its default
-cooperative threads.
-
-@node GTK
-@subsection GTK
-TME supports version 3 of GTK+. You can create a frontend with a GTK
-interface by invoking the appropriate line in the configuration file.
-See examples in the machines directory for details.
 
 The Devices menu has the controls of the emulated machine, under its
 name, like @samp{mainbus0}: Reset, which turns the machine off and on
@@ -552,6 +541,13 @@ command display0 screenshot [ @var{file}.png ]
 command display0 record [ @var{file}.mp4 ]
 command display0 record stop
 @end example
+
+On macOS, the SDL display needs TME configured with its default
+cooperative threads.
+
+TME had a GTK display too, until it was removed in favor of the SDL
+display.  An older script with @samp{display0: tme/host/gtk/display}
+needs that line changed to @samp{display0: tme/host/sdl/display}.
 
 @node VNC
 @subsection VNC

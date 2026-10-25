@@ -1873,15 +1873,18 @@ _tmesh_window_page_display(void)
     return;
   }
   {
-    static const char *displays[] = { "sdl", "gtk" };
-    static const char *display_labels[] = { "SDL", "GTK" };
+    /* an older script can have the GTK display, which is no longer
+       built, so it's offered only to such a script, to be changed: */
+    static const char *displays[] = { "sdl", "rfb", "gtk" };
+    static const char *display_labels[] = { "SDL", "VNC", "GTK (no longer built)" };
+    n = (strcmp(display, "gtk") == 0 ? 3 : 2);
     sel = -1;
-    for (i = 0; i < 2; i++) {
+    for (i = 0; i < n; i++) {
       if (strcmp(display, displays[i]) == 0) {
 	sel = i;
       }
     }
-    if (_tmesh_window_dropdown("display", display_labels, 2, &sel)) {
+    if (_tmesh_window_dropdown("display", display_labels, n, &sel)) {
       tmesh_config_set_display(config, displays[sel]);
     }
   }

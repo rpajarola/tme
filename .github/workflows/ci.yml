@@ -1,7 +1,7 @@
 # Builds tme on every push and pull request. On Linux, configure picks
 # the displays from the libraries installed, so each job installs only
 # those for its displays and checks that configure chose them and that
-# tmesh can load them. macOS builds with both displays. The packages
+# tmesh can load them. macOS builds with the SDL display. The packages
 # job builds the .deb and builds again from the make dist tarball, as
 # the release workflow does.
 name: ci
@@ -18,10 +18,6 @@ jobs:
         include:
           - displays: sdl
             packages: libsdl2-dev
-          - displays: gtk
-            packages: libgtk-3-dev
-          - displays: gtk sdl
-            packages: libgtk-3-dev libsdl2-dev
           - displays: ""
             packages: ""
     name: linux (${{ matrix.displays || 'no displays' }})
@@ -31,30 +27,28 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential autoconf automake libtool libltdl-dev pkg-config bison texinfo zlib1g-dev xvfb ${{ matrix.packages }}
+          sudo apt-get install -y build-essential autoconf automake libtool libltdl-dev pkg-config bison texinfo zlib1g-dev ${{ matrix.packages }}
       - name: Build
         run: |
           autoreconf -fi
           ./configure
           make -j"$(nproc)"
       - name: Check the displays
-        run: xvfb-run -a .github/check-displays.sh ${{ matrix.displays }}
+        run: .github/check-displays.sh ${{ matrix.displays }}
 
   macos:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
       - name: Install build dependencies
-        run: brew install autoconf automake libtool pkgconf texinfo gtk+3 sdl2
+        run: brew install autoconf automake libtool pkgconf texinfo sdl2
       - name: Build
         run: |
           autoreconf -fi
-          ./configure --enable-hosts="gtk rfb sdl tun bsd udp"
+          ./configure --enable-hosts="rfb sdl tun bsd udp"
           make -j"$(sysctl -n hw.ncpu)"
-      # GTK can't open the window system on a runner, so only SDL is
-      # loaded:
       - name: Check the displays
-        run: LOAD=sdl .github/check-displays.sh gtk sdl
+        run: .github/check-displays.sh sdl
 
   packages:
     runs-on: ubuntu-24.04
@@ -63,7 +57,7 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential autoconf automake libtool libltdl-dev pkg-config bison texinfo libgtk-3-dev libsdl2-dev zlib1g-dev dpkg-dev
+          sudo apt-get install -y build-essential autoconf automake libtool libltdl-dev pkg-config bison texinfo libsdl2-dev zlib1g-dev dpkg-dev
           curl -fsSL "https://github.com/goreleaser/nfpm/releases/download/v2.48.0/nfpm_2.48.0_Linux_x86_64.tar.gz" |
             sudo tar xzf - -C /usr/local/bin nfpm
       - name: Build the .deb
@@ -74,5 +68,5 @@ jobs:
           mkdir tarball
           tar xzf tme-*.tar.gz -C tarball
           cd tarball/tme-*
-          ./configure --enable-hosts="gtk rfb sdl tun bsd udp"
+          ./configure --enable-hosts="rfb sdl tun bsd udp"
           make -j"$(nproc)"

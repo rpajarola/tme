@@ -1,3 +1,24 @@
+2026-10-25  Rico Pajarola  <rp@servium.ch>
+
+	* host/display/gtk: Removed the GTK display.  The SDL display has
+	the same menus, and doesn't need a window system library of its
+	own.  Scripts with tme/host/gtk/display need it changed to
+	tme/host/sdl/display; the machine window says so, and offers
+	SDL or VNC instead.
+
+	* configure.ac: Don't look for GTK, and stop with an error if gtk
+	is given in --enable-hosts.
+
+	* machine/sun2/SUN2-MULTIBUS, machine/sun4u/SUN-ULTRA-1: Use the
+	SDL display.  Removed the GTK lines from the other examples, and
+	machine/sun4/SUN4-75-gtk-bw2 and SUN4-75-gtk-cg3.
+
+	* packaging/build-pkg.sh: The macOS package no longer bundles GTK
+	and its data, so tmesh is installed in /usr/local/bin itself,
+	without packaging/macos/tmesh.sh to run it.
+
+	* .github/workflows: Build and test without GTK.
+
 2026-10-24  Rico Pajarola  <rp@servium.ch>
 
 	* tmesh/tmesh-window.c, tmesh/tmesh-config.c: Added the machine

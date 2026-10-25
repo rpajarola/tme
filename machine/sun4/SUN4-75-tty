@@ -109,11 +109,9 @@ le0 at sbus0 slot 0 offset 0xc00000 ipl 5 dma-offset 0xff000000: tme/ic/am7990
 ## the graphics-based display console:
 ##
 # comment out these lines, and the bwtwo0 and cgthree0 declarations
-# above, if you don't have GTK or VNC or you don't want a display console:
+# above, if you don't have VNC or you don't want a display console:
 # You can have only one graphics-based display at a time:
 # uncomment which display you want
-# uncomment this line for a GTK-based graphics display
-#display0: tme/host/gtk/display
 #display0: tme/host/rfb/display
 #display0 at cgthree0
 #display0 at bwtwo0

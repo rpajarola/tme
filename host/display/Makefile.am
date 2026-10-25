@@ -19,4 +19,4 @@ keymap.h: keymap-def.h
 include $(top_srcdir)/modules.am
 
 SUBDIRS = . @TME_DISPLAY_HOSTS@
-DIST_SUBDIRS = gtk rfb sdl
+DIST_SUBDIRS = rfb sdl

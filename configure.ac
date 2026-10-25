@@ -761,7 +761,7 @@ AC_CHECK_DECLS(
 )
 CFLAGS="${old_CFLAGS}"
 
-dnl GLIB, GTK and SDL are found with pkg-config.
+dnl GLIB and SDL are found with pkg-config.
 m4_ifndef([PKG_PROG_PKG_CONFIG],
   [m4_fatal([pkg.m4 not found: install pkg-config (or pkgconf) and rerun autoreconf])])
 PKG_PROG_PKG_CONFIG
@@ -783,18 +783,18 @@ AC_ARG_WITH(tme-host-displays,
 
 AC_SUBST(TME_FB_XLAT_DST)
 
-tme_host_types="gtk rfb sdl tun bsd udp"
+tme_host_types="rfb sdl tun bsd udp"
 
 for tme_host_type in ${tme_host_types}; do
     eval enable_${tme_host_type}=no
 done
 
-dnl by default, the GTK and SDL displays are each built if what they
-dnl need is found.  hosts listed with --enable-hosts must be found:
+dnl by default, the SDL display is built if SDL is found.  hosts
+dnl listed with --enable-hosts must be found:
 tme_hosts_given=no
 AC_ARG_ENABLE(hosts,
 [  --enable-hosts=hosttypes         enable hosts (default="${tme_host_types}",
-                                   with gtk and sdl only if found)],
+                                   with sdl only if found)],
    [tme_host_types=${enableval}; tme_hosts_given=yes], [enable_hosts=yes])
 
 if test "x${enable_hosts}" = xno; then
@@ -802,33 +802,15 @@ if test "x${enable_hosts}" = xno; then
 fi
 
 for tme_host_type in ${tme_host_types}; do
+    case "${tme_host_type}" in
+    gtk) AC_MSG_ERROR([the GTK display has been removed: use sdl in --enable-hosts, and tme/host/sdl/display in scripts]) ;;
+    esac
     eval enable_${tme_host_type}=yes
 done
 
 dnl Start the list of display host support.
 TME_DISPLAY_HOSTS=
 TME_FB_XLAT_DST="d32b32s0p32olml_r0xffff0000_g0xff00ff00_b0xff0000ff d24b32s0p32olml_r0xff0000_g0xff00_b0xff"
-
-dnl Checks for GTK.
-if test "x${enable_gtk}" = xyes; then
-   PKG_CHECK_MODULES([GTK], [gtk+-3.0], [],
-     [if test "x${tme_hosts_given}" = xyes; then
-	AC_MSG_ERROR([GTK not found: install GTK 3 (gtk+-3.0), or leave gtk out of --enable-hosts])
-      fi
-      AC_MSG_WARN([GTK 3 (gtk+-3.0) not found, so the GTK display won't be built])
-      enable_gtk=no])
-fi
-if test "x${enable_gtk}" = xyes; then
-   TME_DISPLAY_HOSTS="gtk ${TME_DISPLAY_HOSTS}"
-   dnl with GDK's Quartz backend, the GTK display also calls
-   dnl CoreGraphics.  GTK_LIBS has it as -Wl,-framework,CoreGraphics,
-   dnl but libtool doesn't carry that over when tmesh links the module
-   dnl statically, so add it in a form that it does:
-   case " `$PKG_CONFIG --variable=targets gdk-3.0` " in
-   *" quartz "*) GTK_LIBS="${GTK_LIBS} -framework CoreGraphics" ;;
-   esac
-#   TME_FB_XLAT_DST="d32b32s0p32olml_r0xffff0000_g0xff00ff00_b0xff0000ff d24b32s0p32olml_r0xff0000_g0xff00_b0xff d16b16s0p32olml_r0xf800_g0x07e0_b0x001f d8b8s0p32olml_r0xff_g0xff_b0xff d1b1s0p32olml_r0x1_g0x1_b0x1"
-fi
 
 dnl Checks for SDL.
 if test "x${enable_sdl}" = xyes; then
@@ -844,8 +826,8 @@ if test "x${enable_sdl}" = xyes; then
 fi
 dnl with SDL, tmesh has the machine window:
 AM_CONDITIONAL([TMESH_WINDOW], [test "x${enable_sdl}" = xyes])
-if test "x${enable_gtk}${enable_sdl}" = xnono; then
-   AC_MSG_WARN([neither GTK 3 nor SDL 2 was found, so there will be no display for emulated screens])
+if test "x${enable_sdl}" = xno; then
+   AC_MSG_WARN([SDL 2 was not found, so there will be no display for emulated screens, other than VNC (rfb)])
 fi
 
 have_rfb=no
@@ -1315,7 +1297,7 @@ AC_ARG_ENABLE(debug,
 [  --enable-debug          compile debuggable libraries and programs (default=don't)],
 [ ], [enable_debug=no])
 if test "x${enable_debug}" = "xyes"; then
-  CPPFLAGS="${CPPFLAGS-} -DENABLE_DEBUG -DTME_NO_DEBUG_LOCKS -DTME_RECODE_DEBUG -D_TME_SPARC_STATS -DGTK_DISABLE_SINGLE_INCLUDES -DNDEBUG"
+  CPPFLAGS="${CPPFLAGS-} -DENABLE_DEBUG -DTME_NO_DEBUG_LOCKS -DTME_RECODE_DEBUG -D_TME_SPARC_STATS -DNDEBUG"
   if test "x${have_Og}" = xyes; then
      CFLAGS="${CFLAGS-} -Og"
      CXXFLAGS="${CXXFLAGS-} -g3 -Og"
@@ -1676,7 +1658,6 @@ AC_CONFIG_FILES([Makefile
 	  machine/sun4u/Makefile
           host/Makefile
           host/display/Makefile
-          host/display/gtk/Makefile
           host/display/rfb/Makefile
           host/display/sdl/Makefile
           host/eth/Makefile

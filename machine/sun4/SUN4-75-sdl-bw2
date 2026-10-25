@@ -132,11 +132,9 @@ bwtworom0 at sbus0 slot 2 offset 0x0: tme/host/posix/memory rom "SUNW,501-1561.b
 ## the graphics-based display console:
 ##
 # comment out these lines, and the bwtwo0 and cgthree0 declarations
-# above, if you don't have GTK, SDL or VNC or you don't want a display console:
+# above, if you don't have SDL or VNC or you don't want a display console:
 # You can have only one graphics-based display at a time:
 # uncomment which display you want
-# uncomment this line for a GTK-based graphics display
-#display0: tme/host/gtk/display
 # uncomment this line for an SDL-based graphics display
 display0: tme/host/sdl/display
 #display0: tme/host/rfb/display

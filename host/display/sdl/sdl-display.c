@@ -53,7 +53,7 @@
 #define TME_SDL_MOUSE_MOD_CMD		TME_BIT(3)
 
 /* the key combination that turns mouse mode off, and the modifier
-   for the key that quits.  as with the GTK display, Ctrl+Shift with
+   for the key that quits.  Ctrl+Shift with
    either Alt (Option) or Cmd (Meta, Super) works everywhere, but
    suggest the usual one for the platform: */
 #ifdef __APPLE__
@@ -74,8 +74,8 @@
 #define TME_SDL_BELL_MSEC		(100)
 #define TME_SDL_BELL_VOLUME		(4000)
 
-/* the keysyms for the SDL keys that don't type characters.  as with
-   the GTK display, Cmd is Meta on macOS: */
+/* the keysyms for the SDL keys that don't type characters.  Cmd is
+   Meta on macOS: */
 static const struct {
   SDL_Keycode sdl_keycode;
   const char *keysym_name;
@@ -959,8 +959,7 @@ TME_ELEMENT_SUB_NEW_DECL(tme_host_sdl,display) {
   return (ENOTSUP);
 #endif
 
-  /* SDL turns SIGINT into a quit event, but leave it to kill tmesh,
-     as it does with the GTK display: */
+  /* SDL turns SIGINT into a quit event, but leave it to kill tmesh: */
   SDL_SetHint(SDL_HINT_NO_SIGNAL_HANDLERS, "1");
 
   /* a click on the window when it doesn't have the focus also goes to

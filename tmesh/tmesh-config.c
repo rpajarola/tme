@@ -1552,7 +1552,8 @@ _tmesh_config_display_line(const struct tmesh_config *config)
   return (-1);
 }
 
-/* this returns the display's kind ("sdl", "gtk" or "rfb"), or NULL
+/* this returns the display's kind ("sdl" or "rfb", or "gtk" in an
+   older script), or NULL
    if there is no display: */
 const char *
 tmesh_config_display(const struct tmesh_config *config)
@@ -1908,7 +1909,7 @@ tmesh_config_summary(const struct tmesh_config *config)
   p += sprintf(p, "%s\n",
 	       (display == NULL ? "No display"
 		: strcmp(display, "sdl") == 0 ? "SDL display"
-		: strcmp(display, "gtk") == 0 ? "GTK display"
+		: strcmp(display, "gtk") == 0 ? "GTK display (no longer built)"
 		: "VNC display"));
   tmesh_config_net(config, &net);
   if (net.tmesh_config_net_line >= 0) {
@@ -1989,6 +1990,11 @@ tmesh_config_check(const struct tmesh_config *config)
   }
   if (drives != NULL) {
     tme_free(drives);
+  }
+  file = tmesh_config_display(config);
+  if (!problem && file != NULL && strcmp(file, "gtk") == 0) {
+    snprintf(text, sizeof(text), "the GTK display is no longer built (choose another under Display)");
+    problem = TRUE;
   }
   return (problem ? tme_strdup(text) : NULL);
 }

@@ -52,12 +52,9 @@ dependencies are worked out by `dpkg-shlibdeps` when it is built.
 macOS (`.pkg`):
 
 ```
-/usr/local/bin/tmesh                 # sets up the bundled GTK, runs libexec/tme/tmesh
-/usr/local/bin/tme-sun-idprom, tme-sun-eeprom, tme-sunlabel, tme-mktap
-/usr/local/libexec/tme/tmesh
-/usr/local/lib/tme/                  # GTK, SDL and their libraries, from Homebrew
+/usr/local/bin/tmesh, tme-sun-idprom, tme-sun-eeprom, tme-sunlabel, tme-mktap
+/usr/local/lib/tme/                  # SDL and the libraries it needs, from Homebrew
 /usr/local/share/tme/examples/
-/usr/local/share/tme/gtk/            # GTK settings schemas, empty module caches, fonts.conf
 /usr/local/share/tme/uninstall.sh
 ```
 
@@ -73,14 +70,14 @@ Debian or Ubuntu:
 
 ```
 sudo apt install build-essential autoconf automake libtool libltdl-dev pkg-config \
-  bison texinfo libgtk-3-dev libsdl2-dev zlib1g-dev dpkg-dev
+  bison texinfo libsdl2-dev zlib1g-dev dpkg-dev
 packaging/build-deb.sh      # dist/tme-rp_<version>_<arch>.deb
 ```
 
 macOS:
 
 ```
-brew install autoconf automake libtool pkgconf texinfo gtk+3 sdl2
+brew install autoconf automake libtool pkgconf texinfo sdl2
 packaging/build-pkg.sh      # dist/tme-rp-<version>-<arch>.pkg
 ```
 

@@ -6,10 +6,6 @@ no longer apply were removed, and the rest are grouped below.
 SUN-ULTRA-1: make the onboard esp0 revision 2, and the onboard
 ncr53c9x a variant esp200 (which isn't implemented yet).
 
-gtk-keyboard.c: some X servers actually *don't* give locking behavior
-to the Caps_Lock, Num_Lock, etc., keysyms, and this causes problems.
-see the comments in _tme_gtk_keyboard_x11_new().
-
 * small
 
 sun4: log when cache and memerr become visible/invisible

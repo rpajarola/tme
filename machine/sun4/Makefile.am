@@ -20,6 +20,6 @@ tme_machine_sun4_la_LIBADD = ../sun/libtme-machine-sun.la
 
 examplesdir = $(pkgdatadir)/examples
 dist_examples_DATA = SUN4-75
-EXTRA_DIST = SUN4-75-gtk-bw2 SUN4-75-gtk-cg3 SUN4-75-sdl-bw2 SUN4-75-sdl-cg3 SUN4-75-rfb-bw2 SUN4-75-rfb-cg3 SUN4-75-tty
+EXTRA_DIST = SUN4-75-sdl-bw2 SUN4-75-sdl-cg3 SUN4-75-rfb-bw2 SUN4-75-rfb-cg3 SUN4-75-tty
 
 include $(top_srcdir)/modules.am

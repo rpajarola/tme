@@ -362,26 +362,18 @@ _tme_keyboard_debug(const struct tme_keyboard_buffer_int *buffer,
 		    tme_uint32_t event_time)
 {
   struct tme_log_handle *handle;
-  const char *string;
-  extern const char *_tme_gtk_keyboard_keyval_name _TME_P((tme_keyboard_keyval_t));
 
   handle = buffer->tme_keyboard_buffer_int_log_handle;
   if (handle == NULL) {
     return;
   }
 
-  string = _tme_gtk_keyboard_keyval_name(keyval);
-  if (string == NULL) {
-    string = "???";
-  }
-
   tme_log(handle, 100, TME_OK,
 	  (handle,
-	   "%s event: time %lu key %lu (%s) %s",
+	   "%s event: time %lu key %lu %s",
 	   stage,
 	   (unsigned long) event_time,
 	   (unsigned long) keyval,
-	   string,
 	   (is_press
 	    ? "press"
 	    : "release")));

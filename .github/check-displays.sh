@@ -2,14 +2,13 @@
 # Checks that configure chose exactly the displays given, and that tmesh
 # can load each of them. Run from the top of a configured and built tree:
 #
-#   .github/check-displays.sh gtk sdl
+#   .github/check-displays.sh sdl
 #   .github/check-displays.sh              # no displays
 #
-# Loading a display only opens the connection to the window system, so
-# GTK needs one (xvfb-run on Linux). SDL uses its dummy driver here.
-# LOAD lists the displays to load, if not all of them:
+# SDL uses its dummy driver here, so no window system is needed. LOAD
+# lists the displays to load, if not all of them:
 #
-#   LOAD=sdl .github/check-displays.sh gtk sdl
+#   LOAD=sdl .github/check-displays.sh rfb sdl
 set -euo pipefail
 
 want=$(printf '%s\n' "$@" | sort | xargs)
@@ -26,8 +25,7 @@ for display in ${LOAD-$@}; do
   status=0
   out=$(echo "source $work/display.cfg" | SDL_VIDEODRIVER=dummy tmesh/tmesh 2>&1) || status=$?
   echo "$out"
-  # tmesh reports a config line it couldn't run as file:line: error,
-  # and GTK exits when it can't open the window system:
+  # tmesh reports a config line it couldn't run as file:line: error:
   if [ "$status" -ne 0 ] || echo "$out" | grep -q 'display\.cfg:'; then
     echo "check-displays.sh: tmesh couldn't load the $display display" >&2
     exit 1
