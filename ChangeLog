@@ -1,5 +1,24 @@
 2026-10-25  Rico Pajarola  <rp@servium.ch>
 
+	* Release 1.2.0.
+
+	* configure.ac: Bumped version to 1.2.0.
+
+	* packaging/update-tap.sh: Remove the formula's revision when a
+	release updates it.
+
+	* scsi/scsi-cdrom.c, host/posix-disk.c, tme/generic/disk.h: A
+	CD-ROM drive with no disc answers NOT READY, MEDIUM NOT PRESENT,
+	instead of ILLEGAL REQUEST as if the drive weren't there, and
+	accepts START STOP UNIT and PREVENT ALLOW; the SS2 PROM's "boot
+	cdrom" now waits for a disc.  Loading a disc makes the next
+	command (other than REQUEST SENSE or INQUIRY) get UNIT ATTENTION,
+	MEDIUM CHANGED, once, so the guest sees the new disc.
+
+	* scsi/scsi-cdb.c: INQUIRY for a LUN with no device answers 0x7f,
+	like a real target, so the sun4c PROM's probe-scsi no longer
+	lists every LUN of every target.
+
 	* host/display/gtk: Removed the GTK display.  The SDL display has
 	the same menus, and doesn't need a window system library of its
 	own.  Scripts with tme/host/gtk/display need it changed to
