@@ -64,6 +64,10 @@ struct tme_disk_connection {
   /* flags: */
   unsigned int tme_disk_connection_flags;
 #define TME_DISK_CONNECTION_FLAG_REMOVABLE	TME_BIT(0)	/* removable media, like a CD-ROM */
+#define TME_DISK_CONNECTION_FLAG_NO_MEDIA	TME_BIT(1)	/* the media has been unloaded */
+
+  /* this counts the media loads and unloads: */
+  unsigned int tme_disk_connection_media_changes;
 
   /* this is called to get a buffer corresponding to a range on the
      device, for reading: */

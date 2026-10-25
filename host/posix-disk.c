@@ -644,6 +644,34 @@ static int _tme_posix_disk_control(conn_disk, control, va_alist)
   return (TME_OK);
 }
 
+/* this tells the device that holds the disk that its media has been
+   loaded or unloaded: */
+static void
+_tme_posix_disk_media_changed(struct tme_posix_disk *posix_disk)
+{
+  struct tme_disk_connection *conn_disk;
+
+  /* if we're not connected yet, the device gets our state with our
+     connection: */
+  if (posix_disk->tme_posix_disk_connection == NULL) {
+    return;
+  }
+
+  /* update our side of the connection: */
+  conn_disk
+    = ((struct tme_disk_connection *)
+       posix_disk->tme_posix_disk_connection->tme_disk_connection.tme_connection_other);
+  if (posix_disk->tme_posix_disk_handle == TME_INVALID_HANDLE) {
+    conn_disk->tme_disk_connection_flags |= TME_DISK_CONNECTION_FLAG_NO_MEDIA;
+  }
+  else {
+    conn_disk->tme_disk_connection_flags &= ~TME_DISK_CONNECTION_FLAG_NO_MEDIA;
+    (void) tme_value64_set(&conn_disk->tme_disk_connection_size,
+			   posix_disk->tme_posix_disk_stat.st_size);
+  }
+  conn_disk->tme_disk_connection_media_changes++;
+}
+
 /* this opens a disk: */
 static int
 _tme_posix_disk_open(struct tme_posix_disk *posix_disk,
@@ -770,6 +798,7 @@ _tme_posix_disk_open(struct tme_posix_disk *posix_disk,
   posix_disk->tme_posix_disk_block_size = block_size;
 #endif  
   posix_disk->tme_posix_disk_filename = tme_strdup(filename);
+  _tme_posix_disk_media_changed(posix_disk);
   tme_media_changed();
   return (TME_OK);
 }
@@ -792,6 +821,7 @@ _tme_posix_disk_close(struct tme_posix_disk *posix_disk)
   posix_disk->tme_posix_disk_handle = TME_INVALID_HANDLE;
   tme_free(posix_disk->tme_posix_disk_filename);
   posix_disk->tme_posix_disk_filename = NULL;
+  _tme_posix_disk_media_changed(posix_disk);
   tme_media_changed();
 }
 

@@ -89,11 +89,19 @@ const struct {
 /* this is the LUN addresser for CD-ROMs.  LUN zero is the drive
    itself, so with no disc it answers NOT READY instead of ILLEGAL
    REQUEST, except for the motor and eject commands, which a drive
-   accepts with no disc: */
+   accepts with no disc.  after a disc is changed, the next command
+   gets a UNIT ATTENTION: */
 static int
 _tme_scsi_cdrom_address_lun(struct tme_scsi_device *scsi_device)
 {
+  struct tme_scsi_cdrom *scsi_cdrom;
+  struct tme_scsi_cdrom_connection *conn_scsi_cdrom;
+  const struct tme_disk_connection *conn_disk;
   int lun;
+  int loaded;
+
+  /* recover our CD-ROM: */
+  scsi_cdrom = (struct tme_scsi_cdrom *) scsi_device;
 
   /* if an IDENTIFY message was sent, use that LUN: */
   lun = scsi_device->tme_scsi_device_addressed_lun;
@@ -105,11 +113,47 @@ _tme_scsi_cdrom_address_lun(struct tme_scsi_device *scsi_device)
     scsi_device->tme_scsi_device_addressed_lun = lun;
   }
 
-  /* if this is LUN zero with no disc, and this isn't a REQUEST
-     SENSE or INQUIRY command: */
-  if (lun == 0
-      && !(scsi_device->tme_scsi_device_luns
-	   & TME_BIT(lun))
+  /* see if this LUN has a disc loaded: */
+  conn_scsi_cdrom = NULL;
+  conn_disk = NULL;
+  if (lun < TME_SCSI_DEVICE_LUN_COUNT) {
+    conn_scsi_cdrom = scsi_cdrom->tme_scsi_cdrom_connections[lun];
+  }
+  if (conn_scsi_cdrom != NULL) {
+    conn_disk
+      = ((const struct tme_disk_connection *)
+	 conn_scsi_cdrom->tme_scsi_disk_connection.tme_disk_connection.tme_connection_other);
+  }
+  loaded
+    = (conn_disk != NULL
+       && !(conn_disk->tme_disk_connection_flags
+	    & TME_DISK_CONNECTION_FLAG_NO_MEDIA));
+
+  /* if this LUN has a disc that has changed since our last command,
+     and this isn't a REQUEST SENSE or INQUIRY command: */
+  if (loaded
+      && (conn_scsi_cdrom->tme_scsi_disk_connection_media_changes
+	  != conn_disk->tme_disk_connection_media_changes)
+      && (scsi_device->tme_scsi_device_cdb[0]
+	  != TME_SCSI_CDB_REQUEST_SENSE)
+      && (scsi_device->tme_scsi_device_cdb[0]
+	  != TME_SCSI_CDB_INQUIRY)) {
+
+    /* return a UNIT ATTENTION, NOT READY TO READY CHANGE CHECK
+       CONDITION, once: */
+    conn_scsi_cdrom->tme_scsi_disk_connection_media_changes
+      = conn_disk->tme_disk_connection_media_changes;
+    tme_scsi_device_check_condition(scsi_device,
+				    TME_SCSI_SENSE_EXT_KEY_UNIT_ATTENTION,
+				    TME_SCSI_SENSE_EXT_ASC_ASCQ_MEDIUM_CHANGED);
+    return (EINVAL);
+  }
+
+  /* if this LUN is a drive with no disc, and this isn't a REQUEST
+     SENSE or INQUIRY command.  LUN zero is always a drive: */
+  if (!loaded
+      && (lun == 0
+	  || conn_scsi_cdrom != NULL)
       && (scsi_device->tme_scsi_device_cdb[0]
 	  != TME_SCSI_CDB_REQUEST_SENSE)
       && (scsi_device->tme_scsi_device_cdb[0]

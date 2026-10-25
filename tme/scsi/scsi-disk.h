@@ -128,6 +128,9 @@ struct tme_scsi_disk_connection {
 
   /* the block size for this disk: */
   union tme_value64 tme_scsi_disk_connection_block_size;
+
+  /* the media changes of the disk that we have reported: */
+  unsigned int tme_scsi_disk_connection_media_changes;
 };
 
 /* a SCSI disk: */
