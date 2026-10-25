@@ -21,7 +21,8 @@ f="$work/tap/Formula/$formula.rb"
 sed -i.bak -E \
   -e "s|^(  url )\".*\"|\1\"$url\"|" \
   -e "s|^(  sha256 )\".*\"|\1\"$sha\"|" \
-  -e "s|^(  version )\".*\"|\1\"${tag#v}\"|" "$f"
+  -e "s|^(  version )\".*\"|\1\"${tag#v}\"|" \
+  -e "/^  revision /d" "$f"
 rm -f "$f.bak"
 cd "$work/tap"
 if git diff --quiet; then
