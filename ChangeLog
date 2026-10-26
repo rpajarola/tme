@@ -1,5 +1,9 @@
 2026-10-26  Rico Pajarola  <rp@servium.ch>
 
+	* Release 1.2.1.
+
+	* configure.ac: Bumped version to 1.2.1.
+
 	* packaging/icon: tme has an icon, a robot emu whose body is a
 	SPARCstation IPC-like lunchbox.  make-icons.sh makes the PNGs of
 	the icon theme and host/display/sdl/sdl-icon.h from tme-icon.svg.
