@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=tme
+GenericName=Machine Emulator
+Comment=Emulate Sun-2, Sun-3, Sun-4c and UltraSPARC machines
+Exec=tmesh
+Icon=tme
+Terminal=true
+Categories=System;Emulator;
+StartupWMClass=tmesh

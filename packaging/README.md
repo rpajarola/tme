@@ -43,6 +43,8 @@ Debian and Ubuntu:
 /usr/bin/tmesh, tme-sun-idprom, tme-sun-eeprom, tme-sunlabel, tme-mktap
 /usr/share/tme/examples/        # SUN2-MULTIBUS, SUN3-CARRERA, SUN4-75, SUN-ULTRA-1, keyboard maps
 /usr/share/info/tme.info.gz
+/usr/share/applications/tme.desktop
+/usr/share/icons/hicolor/*/apps/tme.{png,svg}
 ```
 
 The modules are linked into tmesh, so the package leaves out the
@@ -63,6 +65,16 @@ the libraries tmesh needs from Homebrew into it and points tmesh at the
 copies. It is built for the Mac's architecture (Apple silicon in CI);
 on Intel Macs, use Homebrew. Remove it with
 `sudo /usr/local/share/tme/uninstall.sh`.
+
+## The icon
+
+tme's icon (a robot emu whose body is a SPARCstation IPC-like
+lunchbox) is drawn in `icon/tme-icon.svg`. `icon/make-icons.sh` (which
+needs rsvg-convert and ImageMagick) makes the rest from it, which is in
+git: the PNGs of the icon theme, and `host/display/sdl/sdl-icon.h`, which
+tmesh gives the machine window and the display's windows (and on macOS,
+the Dock). `icon/tme.desktop` gives it to Wayland's task switchers, which
+go by the app ID (`tmesh`), not by the windows' icons.
 
 ## Build
 

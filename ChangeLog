@@ -1,3 +1,16 @@
+2026-10-26  Rico Pajarola  <rp@servium.ch>
+
+	* packaging/icon: tme has an icon, a robot emu whose body is a
+	SPARCstation IPC-like lunchbox.  make-icons.sh makes the PNGs of
+	the icon theme and host/display/sdl/sdl-icon.h from tme-icon.svg.
+
+	* host/display/sdl/sdl-display.c, tmesh/tmesh-window.c: The machine
+	window and the display's windows have the icon (on macOS, also in
+	the Dock), and the app ID tmesh, which tme.desktop matches.
+
+	* Makefile.am, packaging/nfpm.yaml: Install tme.desktop and the
+	icons, and put them in the .deb.
+
 2026-10-25  Rico Pajarola  <rp@servium.ch>
 
 	* Release 1.2.0.

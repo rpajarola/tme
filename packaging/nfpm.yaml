@@ -34,6 +34,11 @@ contents:
     type: tree
   - src: dist/stage/usr/share/info/tme.info.gz
     dst: /usr/share/info/tme.info.gz
+  - src: dist/stage/usr/share/applications/tme.desktop
+    dst: /usr/share/applications/tme.desktop
+  - src: dist/stage/usr/share/icons/hicolor
+    dst: /usr/share/icons/hicolor
+    type: tree
   - src: README
     dst: /usr/share/doc/tme-rp/README
   - src: NEWS

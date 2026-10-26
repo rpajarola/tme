@@ -35,6 +35,7 @@
 
 /* includes: */
 #include "sdl-display.h"
+#include "sdl-icon.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -913,6 +914,7 @@ _tme_sdl_screen_new(struct tme_display *_display,
     abort();
   }
   SDL_SetWindowData(screen->tme_sdl_screen_window, "tme", screen);
+  _tme_sdl_set_icon(screen->tme_sdl_screen_window);
   screen->tme_sdl_screen_renderer
     = SDL_CreateRenderer(screen->tme_sdl_screen_window, -1, 0);
   if (screen->tme_sdl_screen_renderer == NULL) {
@@ -961,6 +963,9 @@ TME_ELEMENT_SUB_NEW_DECL(tme_host_sdl,display) {
 
   /* SDL turns SIGINT into a quit event, but leave it to kill tmesh: */
   SDL_SetHint(SDL_HINT_NO_SIGNAL_HANDLERS, "1");
+  /* the app ID that matches tme.desktop, for its icon in task switchers: */
+  SDL_SetHint("SDL_VIDEO_X11_WMCLASS", "tmesh");
+  SDL_SetHint("SDL_VIDEO_WAYLAND_WMCLASS", "tmesh");
 
   /* a click on the window when it doesn't have the focus also goes to
      the window, to turn on mouse mode: */

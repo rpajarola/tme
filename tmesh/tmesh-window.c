@@ -63,6 +63,7 @@
 
 #include "microui.h"
 #include "host/display/sdl/sdl-font.h"
+#include "host/display/sdl/sdl-icon.h"
 
 #ifdef __APPLE__
 #include <objc/message.h>
@@ -2312,6 +2313,9 @@ tmesh_window_run(const char *edit_path, int running, char **_script)
 
   SDL_SetMainReady();
   SDL_SetHint(SDL_HINT_NO_SIGNAL_HANDLERS, "1");
+  /* the app ID that matches tme.desktop, for its icon in task switchers: */
+  SDL_SetHint("SDL_VIDEO_X11_WMCLASS", "tmesh");
+  SDL_SetHint("SDL_VIDEO_WAYLAND_WMCLASS", "tmesh");
   SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "nearest");
   if (SDL_Init(SDL_INIT_VIDEO) != 0) {
     fprintf(stderr, "tmesh: could not open the machine window: %s\n", SDL_GetError());
@@ -2321,6 +2325,7 @@ tmesh_window_run(const char *edit_path, int running, char **_script)
 			       TMESH_WINDOW_W, TMESH_WINDOW_H,
 			       SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
   if (ui.window != NULL) {
+    _tme_sdl_set_icon(ui.window);
     ui.renderer = SDL_CreateRenderer(ui.window, -1, SDL_RENDERER_PRESENTVSYNC);
   }
   if (ui.renderer == NULL) {

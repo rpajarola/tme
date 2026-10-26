@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="front" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#d8d9d3"/><stop offset="1" stop-color="#aeb0a9"/>
+    </linearGradient>
+    <linearGradient id="side" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#9c9e97"/><stop offset="1" stop-color="#83857f"/>
+    </linearGradient>
+  </defs>
+  <g stroke="#1f232b" stroke-linejoin="round" stroke-linecap="round">
+    <!-- the tail: brass plates behind the case -->
+    <path d="M 40 100 L 8 118 L 22 124 L 6 140 L 24 141 L 12 160 L 32 152 L 30 170 L 42 158 Z" fill="#c99a55" stroke-width="2.5"/>
+    <g stroke="#9c7638" stroke-width="2" fill="none"><path d="M 36 112 L 22 124"/><path d="M 36 128 L 24 141"/><path d="M 37 144 L 32 152"/></g>
+    <!-- legs: pistons with backward knees -->
+    <g id="leg" fill="none">
+      <path d="M 92 186 L 82 214" stroke-width="12"/>
+      <path d="M 92 186 L 82 214" stroke="#9c7638" stroke-width="8"/>
+      <path d="M 82 214 L 92 240" stroke-width="9"/>
+      <path d="M 82 214 L 92 240" stroke="#e2b877" stroke-width="5.5"/>
+      <circle cx="82" cy="214" r="6" fill="#e2b877" stroke-width="2"/>
+      <circle cx="82" cy="214" r="1.6" fill="#7d6236" stroke="none"/>
+      <path d="M 84 238 L 106 238 L 108 244 L 82 244 Z" fill="#e2b877" stroke-width="2"/>
+    </g>
+    <use href="#leg" transform="translate(40,0)"/>
+    <!-- the case: a lunchbox -->
+    <path d="M 34 94 L 58 76 L 206 76 L 182 94 Z" fill="#e4e5df" stroke-width="3"/>
+    <path d="M 182 94 L 206 76 L 206 168 L 182 190 Z" fill="url(#side)" stroke-width="3"/>
+    <rect x="34" y="94" width="148" height="96" rx="4" fill="url(#front)" stroke-width="3"/>
+    <!-- the handle, folded on top -->
+    <path d="M 76 90 L 88 81 L 164 81 L 152 90 Z" fill="#b9bbb4" stroke-width="2"/>
+    <path d="M 88 86 L 156 86" stroke="#8f918b" stroke-width="2"/>
+    <!-- the front: badge, floppy, LED, vents -->
+    <rect x="46" y="106" width="64" height="30" rx="4" fill="#2a2f39" stroke-width="2"/>
+    <text x="78" y="129" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-weight="bold" font-size="22" fill="#f0c94a" stroke="none" letter-spacing="0.5">TME</text>
+    <rect x="122" y="112" width="48" height="8" rx="2" fill="#3a4150" stroke-width="2"/>
+    <rect x="160" y="124" width="10" height="5" rx="1.5" fill="#8f918b" stroke-width="1.5"/>
+    <g stroke="#8f918b" stroke-width="2.5">
+      <path d="M 50 166 L 50 180"/><path d="M 58 166 L 58 180"/><path d="M 66 166 L 66 180"/><path d="M 74 166 L 74 180"/><path d="M 82 166 L 82 180"/>
+    </g>
+    <circle cx="168" cy="176" r="4" fill="#7ee08a" stroke-width="1.8"/>
+    <!-- the neck, in segments, out of the top front corner -->
+    <path d="M 172 92 L 200 46" stroke-width="14"/>
+    <path d="M 172 92 L 200 46" stroke="#7d6236" stroke-width="9.5"/>
+    <g stroke="#e2b877" stroke-width="4.8">
+      <path d="M 170 77 L 185 86"/><path d="M 175 69 L 190 78"/><path d="M 180 61 L 195 70"/><path d="M 185 53 L 200 62"/>
+    </g>
+    <!-- the head: a box with a beak, an eye and an antenna -->
+    <path d="M 196 32 L 190 18" stroke-width="5"/>
+    <path d="M 196 32 L 190 18" stroke="#9c7638" stroke-width="2.2"/>
+    <circle cx="189.5" cy="16.5" r="3.6" fill="#ff6a3d" stroke-width="2"/>
+    <path d="M 220 40 L 244 47 L 220 53 Z" fill="#c99a55" stroke-width="2.4"/>
+    <rect x="188" y="30" width="34" height="26" rx="6" fill="#e2b877" stroke-width="2.8"/>
+    <path d="M 192 50 L 217 50" stroke="#9c7638" stroke-width="1.8"/>
+    <circle cx="209" cy="40" r="7" fill="#5ad1ff" opacity="0.35" stroke="none"/>
+    <circle cx="209" cy="40" r="4.4" fill="#5ad1ff" stroke-width="1.6"/>
+    <circle cx="210.3" cy="38.7" r="1.4" fill="#e8fbff" stroke="none"/>
+  </g>
+</svg>
