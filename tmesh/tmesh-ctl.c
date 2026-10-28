@@ -1168,6 +1168,9 @@ _TMESH_CTL_HANDLER(_tmesh_ctl_cmd_break_del)
   if (!_tmesh_ctl_get_int(req, "bp", -1, &id, err)) {
     return (FALSE);
   }
+  if (id < 0) {
+    return (_tmesh_ctl_fail(err, "bad_arg", "'bp' should be a breakpoint's id, from break_add"));
+  }
   for (cpu = tme_debug_cpus(); cpu != NULL; cpu = cpu->tme_debug_cpu_next) {
     if (id != _tmesh_ctl_ru.bp_id
 	&& tme_debug_cpu_breakpoint_remove(cpu, id) == TME_OK) {
@@ -1621,6 +1624,9 @@ _TMESH_CTL_HANDLER(_tmesh_ctl_cmd_watch_del)
 
   if (!_tmesh_ctl_get_int(req, "watch", -1, &id, err)) {
     return (FALSE);
+  }
+  if (id < 0) {
+    return (_tmesh_ctl_fail(err, "bad_arg", "'watch' should be a watch's id, from watch_add"));
   }
   if (tme_debug_watch_remove(id) != TME_OK) {
     return (_tmesh_ctl_fail(err, "no_such_watch", "no watch with id %lld", (long long) id));
