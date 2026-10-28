@@ -446,6 +446,116 @@ _tme_m68k_debug_reg(struct tme_debug_cpu *debug, unsigned int reg_i, struct tme_
   return (TRUE);
 }
 
+static int
+_tme_m68k_debug_reg_set(struct tme_debug_cpu *debug, const char *name, tme_uint64_t value)
+{
+  struct tme_m68k *ic;
+  unsigned int reg_i;
+  struct tme_debug_reg reg;
+
+  ic = debug->tme_debug_cpu_private;
+
+  /* the register must be one that this model has: */
+  for (reg_i = 0; _tme_m68k_debug_reg(debug, reg_i, &reg); reg_i++) {
+    if (!strcmp(reg.tme_debug_reg_name, name)) {
+      break;
+    }
+  }
+  if (!_tme_m68k_debug_reg(debug, reg_i, &reg)) {
+    return (FALSE);
+  }
+
+  if (reg_i < 16) {
+    ic->tme_m68k_ireg_uint32(TME_M68K_IREG_D0 + reg_i) = value;
+  }
+  else if (!strcmp(name, "pc")) {
+    ic->tme_m68k_ireg_pc = ic->tme_m68k_ireg_pc_next = value;
+  }
+  else if (!strcmp(name, "sr")) {
+    /* this switches the stack pointers as the S and M bits say: */
+    tme_m68k_change_sr(ic, value);
+  }
+  else if (!strcmp(name, "usp")
+	   || !strcmp(name, "isp")
+	   || !strcmp(name, "msp")) {
+    *_tme_m68k_debug_sp(ic, name) = value;
+  }
+  else if (!strcmp(name, "sfc")) {
+    ic->tme_m68k_ireg_sfc = value & 7;
+  }
+  else if (!strcmp(name, "dfc")) {
+    ic->tme_m68k_ireg_dfc = value & 7;
+  }
+  else if (!strcmp(name, "vbr")) {
+    ic->tme_m68k_ireg_vbr = value;
+  }
+  else if (!strcmp(name, "cacr")) {
+    ic->tme_m68k_ireg_cacr = value;
+  }
+  else {
+    ic->tme_m68k_ireg_caar = value;
+  }
+  return (TRUE);
+}
+
+/* this reads or writes memory for the debugger, through the TLB entry
+   that a data access would use, and only where the TLB entry gives
+   emulator memory: */
+static unsigned int
+_tme_m68k_debug_mem(struct tme_debug_cpu *debug, tme_uint64_t address,
+		    tme_uint8_t *buffer, unsigned int count, int write, int space)
+{
+  struct tme_m68k *ic;
+  struct tme_m68k_tlb *tlb;
+  unsigned int function_code;
+  unsigned int done, chunk;
+  tme_uint32_t linear_address;
+  const tme_shared tme_uint8_t *emulator_off;
+  int ok;
+
+  ic = debug->tme_debug_cpu_private;
+  if (ic->_tme_m68k_bus_connection == NULL) {
+    return (0);
+  }
+  function_code = (space >= 0 ? (space & 7) : TME_M68K_FC_SD);
+  for (done = 0; done < count; done += chunk) {
+    linear_address = address + done;
+    if (ic->_tme_m68k_bus_16bit) {
+      linear_address &= 0x00ffffff;
+    }
+
+    /* fill the TLB entry for this address: */
+    tlb = TME_M68K_DTLB_ENTRY(ic, ic->_tme_m68k_bus_context, function_code, linear_address);
+    tme_m68k_tlb_busy(tlb);
+    tme_m68k_tlb_fill(ic, tlb, function_code, linear_address,
+		      (write ? TME_BUS_CYCLE_WRITE : TME_BUS_CYCLE_READ));
+
+    /* it must give emulator memory for this address: */
+    emulator_off = (write
+		    ? tlb->tme_m68k_tlb_emulator_off_write
+		    : tlb->tme_m68k_tlb_emulator_off_read);
+    ok = (tme_m68k_tlb_is_valid(tlb)
+	  && emulator_off != TME_EMULATOR_OFF_UNDEF
+	  && (tlb->tme_m68k_tlb_function_codes_mask & TME_BIT(function_code)) != 0
+	  && linear_address >= (tme_bus_addr32_t) tlb->tme_m68k_tlb_linear_first
+	  && linear_address <= (tme_bus_addr32_t) tlb->tme_m68k_tlb_linear_last);
+    if (!ok) {
+      tme_m68k_tlb_unbusy(tlb);
+      break;
+    }
+    chunk = TME_MIN(count - done,
+		    ((tme_bus_addr32_t) tlb->tme_m68k_tlb_linear_last - linear_address) + 1);
+    if (write) {
+      memcpy((void *) (emulator_off + linear_address), buffer + done, chunk);
+    }
+    else {
+      memcpy(buffer + done, (const void *) (emulator_off + linear_address), chunk);
+    }
+    tme_m68k_tlb_unbusy(tlb);
+  }
+  return (done);
+}
+
 /* the m68k thread: */
 static _tme_thret
 _tme_m68k_th(struct tme_m68k *ic)
@@ -817,6 +927,8 @@ tme_m68k_new(struct tme_m68k *ic, const char * const *args, const void *extra, c
   ic->_tme_m68k_debug.tme_debug_cpu_private = ic;
   ic->_tme_m68k_debug.tme_debug_cpu_wakeup = _tme_m68k_debug_wakeup;
   ic->_tme_m68k_debug.tme_debug_cpu_reg = _tme_m68k_debug_reg;
+  ic->_tme_m68k_debug.tme_debug_cpu_reg_set = _tme_m68k_debug_reg_set;
+  ic->_tme_m68k_debug.tme_debug_cpu_mem = _tme_m68k_debug_mem;
   ic->_tme_m68k_debug.tme_debug_cpu_pc = _tme_m68k_debug_pc;
   ic->_tme_m68k_debug.tme_debug_cpu_insns = _tme_m68k_debug_insns;
   tme_debug_cpu_register(&ic->_tme_m68k_debug);

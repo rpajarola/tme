@@ -91,6 +91,14 @@ struct tme_debug_cpu {
      register: */
   int (*tme_debug_cpu_reg_set) _TME_P((struct tme_debug_cpu *, _tme_const char *, tme_uint64_t));
 
+  /* this reads (or with nonzero write, writes) count bytes of memory
+     at an address, in an address space (on the m68k a function code,
+     on the SPARC an ASI), or in the CPU's usual data space if the
+     space is negative.  only memory is accessed, never device
+     registers.  it returns how many bytes it accessed, up to the first
+     that it couldn't: */
+  unsigned int (*tme_debug_cpu_mem) _TME_P((struct tme_debug_cpu *, tme_uint64_t, tme_uint8_t *, unsigned int, int, int));
+
   /* this returns the PC: */
   tme_uint64_t (*tme_debug_cpu_pc) _TME_P((struct tme_debug_cpu *));
 

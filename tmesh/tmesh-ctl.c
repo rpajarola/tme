@@ -278,13 +278,38 @@ _tmesh_ctl_get_int(cJSON *req, const char *key, tme_int64_t def, tme_int64_t *_v
   return (_tmesh_ctl_fail(err, "bad_arg", "'%s' should be an integer", key));
 }
 
-/* an address parameter: a JSON number, or a string such as "0xfef0000": */
+/* this gets the value of a register of a CPU, returning zero if there
+   is no such register: */
 static int
-_tmesh_ctl_get_addr(cJSON *req, const char *key, tme_uint64_t *_addr,
-		    struct _tmesh_ctl_error *err)
+_tmesh_ctl_reg_value(struct tme_debug_cpu *cpu, const char *name, size_t len, tme_uint64_t *_value)
+{
+  struct tme_debug_reg reg;
+  unsigned int reg_i;
+
+  if (cpu == NULL) {
+    return (FALSE);
+  }
+  for (reg_i = 0; (*cpu->tme_debug_cpu_reg)(cpu, reg_i, &reg); reg_i++) {
+    if (strlen(reg.tme_debug_reg_name) == len
+	&& !strncmp(reg.tme_debug_reg_name, name, len)) {
+      *_value = reg.tme_debug_reg_value;
+      return (TRUE);
+    }
+  }
+  return (FALSE);
+}
+
+/* an address parameter: a JSON number, or a string with a number
+   ("0xfef0000") or a register of the CPU ("pc"), optionally plus or
+   minus a number ("a7+8"): */
+static int
+_tmesh_ctl_get_addr(cJSON *req, const char *key, struct tme_debug_cpu *cpu,
+		    tme_uint64_t *_addr, struct _tmesh_ctl_error *err)
 {
   cJSON *item;
+  const char *s, *p;
   char *end;
+  tme_uint64_t base, offset;
 
   item = cJSON_GetObjectItemCaseSensitive(req, key);
   if (cJSON_IsNumber(item) && item->valuedouble >= 0) {
@@ -292,12 +317,40 @@ _tmesh_ctl_get_addr(cJSON *req, const char *key, tme_uint64_t *_addr,
     return (TRUE);
   }
   if (cJSON_IsString(item) && item->valuestring[0] != '\0') {
-    *_addr = strtoull(item->valuestring, &end, 0);
-    if (*end == '\0') {
+    s = item->valuestring;
+
+    /* the base, a number or a register: */
+    if (s[0] >= '0' && s[0] <= '9') {
+      base = strtoull(s, &end, 0);
+      p = end;
+    }
+    else {
+      for (p = s; *p != '\0' && *p != '+' && *p != '-' && *p != ' '; p++);
+      if (!_tmesh_ctl_reg_value(cpu, s, p - s, &base)) {
+	return (_tmesh_ctl_fail(err, "bad_arg", "'%s': no register '%.*s'", key, (int) (p - s), s));
+      }
+    }
+
+    /* any offset: */
+    while (*p == ' ') {
+      p++;
+    }
+    if (*p == '\0') {
+      *_addr = base;
       return (TRUE);
     }
+    if ((*p == '+' || *p == '-') && p[1] != '\0') {
+      offset = strtoull(p + 1, &end, 0);
+      if (*end == '\0') {
+	*_addr = (*p == '+' ? base + offset : base - offset);
+	if (cpu != NULL && cpu->tme_debug_cpu_bits <= 32) {
+	  *_addr = (tme_uint32_t) *_addr;
+	}
+	return (TRUE);
+      }
+    }
   }
-  return (_tmesh_ctl_fail(err, "bad_arg", "'%s' should be an address, such as \"0x1000\"", key));
+  return (_tmesh_ctl_fail(err, "bad_arg", "'%s' should be an address: a number, or a register plus or minus a number (\"pc+16\")", key));
 }
 
 /* the "cpu" parameter: a CPU number, by default the first CPU: */
@@ -763,6 +816,154 @@ _TMESH_CTL_HANDLER(_tmesh_ctl_cmd_regs)
   return (TRUE);
 }
 
+static char *_tmesh_ctl_encode_console _TME_P((const tme_uint8_t *, size_t, int));
+static tme_uint8_t *_tmesh_ctl_decode_input _TME_P((const char *, int, size_t *, struct _tmesh_ctl_error *));
+
+_TMESH_CTL_HANDLER(_tmesh_ctl_cmd_reg_set)
+{
+  cJSON *name;
+  struct tme_debug_cpu *cpu;
+  struct tme_debug_reg reg;
+  tme_uint64_t value;
+  unsigned int reg_i;
+  char buf[24];
+
+  name = cJSON_GetObjectItemCaseSensitive(req, "name");
+  if (!_tmesh_ctl_get_cpu(req, &cpu, err)
+      || !_tmesh_ctl_get_addr(req, "value", cpu, &value, err)) {
+    return (FALSE);
+  }
+  if (!cJSON_IsString(name)) {
+    return (_tmesh_ctl_fail(err, "bad_arg", "'name' should be a register name"));
+  }
+  if (!cpu->tme_debug_cpu_stopped) {
+    return (_tmesh_ctl_fail(err, "not_stopped", "the machine is running; pause it first"));
+  }
+  if (cpu->tme_debug_cpu_reg_set == NULL
+      || !(*cpu->tme_debug_cpu_reg_set)(cpu, name->valuestring, value)) {
+    return (_tmesh_ctl_fail(err, "bad_arg", "no register '%s', or it can't be written", name->valuestring));
+  }
+
+  /* the value as now stored: */
+  for (reg_i = 0; (*cpu->tme_debug_cpu_reg)(cpu, reg_i, &reg); reg_i++) {
+    if (!strcmp(reg.tme_debug_reg_name, name->valuestring)) {
+      snprintf(buf, sizeof(buf), "0x%0*llx", (int) (reg.tme_debug_reg_bits + 3) / 4,
+	       (unsigned long long) reg.tme_debug_reg_value);
+      cJSON_AddStringToObject(result, "value", buf);
+      break;
+    }
+  }
+  return (TRUE);
+}
+
+/* the "space" parameter: absent or "virtual" for the CPU's usual data
+   space, or a number: */
+static int
+_tmesh_ctl_get_space(cJSON *req, int *_space, struct _tmesh_ctl_error *err)
+{
+  cJSON *item;
+  tme_int64_t space;
+
+  item = cJSON_GetObjectItemCaseSensitive(req, "space");
+  *_space = -1;
+  if (item == NULL || cJSON_IsNull(item)
+      || (cJSON_IsString(item) && !strcmp(item->valuestring, "virtual"))) {
+    return (TRUE);
+  }
+  if (!_tmesh_ctl_get_int(req, "space", -1, &space, err) || space < 0 || space > 255) {
+    return (_tmesh_ctl_fail(err, "bad_arg", "'space' should be \"virtual\", or a number (an m68k function code, or a SPARC ASI)"));
+  }
+  *_space = space;
+  return (TRUE);
+}
+
+static void
+_tmesh_ctl_add_hex(cJSON *o, const char *key, const tme_uint8_t *buf, size_t count)
+{
+  char *hex;
+
+  hex = _tmesh_ctl_encode_console(buf, count, TRUE);
+  cJSON_AddStringToObject(o, key, hex);
+  tme_free(hex);
+}
+
+_TMESH_CTL_HANDLER(_tmesh_ctl_cmd_mem_read)
+{
+  struct tme_debug_cpu *cpu;
+  tme_uint64_t addr;
+  tme_int64_t len;
+  tme_uint8_t *buf;
+  unsigned int count;
+  int space;
+
+  if (!_tmesh_ctl_get_cpu(req, &cpu, err)
+      || !_tmesh_ctl_get_addr(req, "addr", cpu, &addr, err)
+      || !_tmesh_ctl_get_int(req, "len", 64, &len, err)
+      || !_tmesh_ctl_get_space(req, &space, err)) {
+    return (FALSE);
+  }
+  if (len < 1 || len > TMESH_CTL_READ_MAX) {
+    return (_tmesh_ctl_fail(err, "bad_arg", "'len' should be 1 to %d", TMESH_CTL_READ_MAX));
+  }
+  if (cpu->tme_debug_cpu_mem == NULL) {
+    return (_tmesh_ctl_fail(err, "bad_arg", "this CPU's memory can't be read"));
+  }
+  buf = tme_new(tme_uint8_t, len);
+  count = (*cpu->tme_debug_cpu_mem)(cpu, addr, buf, len, FALSE, space);
+  if (count == 0) {
+    tme_free(buf);
+    return (_tmesh_ctl_fail(err, "mem_fault", "can't read memory at 0x%llx", (unsigned long long) addr));
+  }
+  _tmesh_ctl_add_addr(result, "addr", cpu, addr);
+  _tmesh_ctl_add_hex(result, "data", buf, count);
+  if (count < len) {
+    _tmesh_ctl_add_addr(result, "fault_at", cpu, addr + count);
+  }
+  tme_free(buf);
+  return (TRUE);
+}
+
+_TMESH_CTL_HANDLER(_tmesh_ctl_cmd_mem_write)
+{
+  struct tme_debug_cpu *cpu;
+  cJSON *data;
+  tme_uint64_t addr;
+  tme_uint8_t *bytes;
+  size_t count;
+  unsigned int written;
+  int space;
+
+  data = cJSON_GetObjectItemCaseSensitive(req, "data");
+  if (!_tmesh_ctl_get_cpu(req, &cpu, err)
+      || !_tmesh_ctl_get_addr(req, "addr", cpu, &addr, err)
+      || !_tmesh_ctl_get_space(req, &space, err)) {
+    return (FALSE);
+  }
+  if (!cJSON_IsString(data) || data->valuestring[0] == '\0') {
+    return (_tmesh_ctl_fail(err, "bad_arg", "'data' should be hex digits, two per byte"));
+  }
+  if (!cpu->tme_debug_cpu_stopped) {
+    return (_tmesh_ctl_fail(err, "not_stopped", "the machine is running; pause it first"));
+  }
+  if (cpu->tme_debug_cpu_mem == NULL) {
+    return (_tmesh_ctl_fail(err, "bad_arg", "this CPU's memory can't be written"));
+  }
+  bytes = _tmesh_ctl_decode_input(data->valuestring, TRUE, &count, err);
+  if (bytes == NULL) {
+    return (FALSE);
+  }
+  written = (*cpu->tme_debug_cpu_mem)(cpu, addr, bytes, count, TRUE, space);
+  tme_free(bytes);
+  if (written == 0) {
+    return (_tmesh_ctl_fail(err, "mem_fault", "can't write memory at 0x%llx", (unsigned long long) addr));
+  }
+  cJSON_AddNumberToObject(result, "written", written);
+  if (written < count) {
+    _tmesh_ctl_add_addr(result, "fault_at", cpu, addr + written);
+  }
+  return (TRUE);
+}
+
 static void
 _tmesh_ctl_add_breakpoint(cJSON *o, struct tme_debug_cpu *cpu, unsigned int bp_i)
 {
@@ -778,7 +979,7 @@ _TMESH_CTL_HANDLER(_tmesh_ctl_cmd_break_add)
   int id;
 
   if (!_tmesh_ctl_get_cpu(req, &cpu, err)
-      || !_tmesh_ctl_get_addr(req, "pc", &addr, err)) {
+      || !_tmesh_ctl_get_addr(req, "pc", cpu, &addr, err)) {
     return (FALSE);
   }
   id = ++_tmesh_ctl_bp_next;
@@ -1027,7 +1228,7 @@ _TMESH_CTL_HANDLER(_tmesh_ctl_cmd_run_until)
   }
   if (pc != NULL) {
     if (!_tmesh_ctl_get_cpu(req, &cpu, err)
-	|| !_tmesh_ctl_get_addr(req, "pc", &addr, err)) {
+	|| !_tmesh_ctl_get_addr(req, "pc", cpu, &addr, err)) {
       return (FALSE);
     }
   }
@@ -1103,6 +1304,9 @@ static const struct {
   { "quit", _tmesh_ctl_cmd_quit },
   { "raw", _tmesh_ctl_cmd_raw },
   { "regs", _tmesh_ctl_cmd_regs },
+  { "reg_set", _tmesh_ctl_cmd_reg_set },
+  { "mem_read", _tmesh_ctl_cmd_mem_read },
+  { "mem_write", _tmesh_ctl_cmd_mem_write },
   { "break_add", _tmesh_ctl_cmd_break_add },
   { "break_del", _tmesh_ctl_cmd_break_del },
   { "break_list", _tmesh_ctl_cmd_break_list },
@@ -1544,6 +1748,7 @@ tmesh_ctl_client(int argc, char **argv)
     { "break_del", "id", TRUE },
     { "console_read", "since", TRUE },
     { "console_write", "data", FALSE },
+    { "mem_read", "addr", FALSE },
     { NULL, NULL, FALSE }
   };
   const char *spec, *cmd, *arg;
