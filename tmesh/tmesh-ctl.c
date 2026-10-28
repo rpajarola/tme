@@ -103,6 +103,8 @@ struct _tmesh_ctl_stop {
   char reason[40];
   tme_uint64_t pc;
   int bp;
+  int watch;
+  tme_uint64_t watch_seq;
   tme_uint64_t insns;
 
   /* for run_until: */
@@ -141,6 +143,27 @@ static struct {
   char match[200];
   tme_uint64_t match_end;
 } _tmesh_ctl_ru;
+
+/* the next watch id: */
+static int _tmesh_ctl_watch_next;
+
+/* subscriptions, which end with the connection: the consoles, and
+   the offset of what has been sent of each, and the log, and the log
+   messages waiting to be sent: */
+#define TMESH_CTL_CONSOLES_MAX		(64)
+#define TMESH_CTL_LOG_MAX		(1000)
+static int _tmesh_ctl_sub_console[TMESH_CTL_CONSOLES_MAX];
+static tme_uint64_t _tmesh_ctl_sub_console_sent[TMESH_CTL_CONSOLES_MAX];
+static volatile int _tmesh_ctl_sub_log;
+static struct {
+  char *element;
+  unsigned long level;
+  int err;
+  char *message;
+} _tmesh_ctl_log_queue[TMESH_CTL_LOG_MAX];
+static unsigned int _tmesh_ctl_log_count;
+static unsigned long _tmesh_ctl_log_dropped;
+static tme_mutex_t _tmesh_ctl_log_mutex;
 
 /* this returns the time in microseconds: */
 static tme_int64_t
@@ -399,6 +422,10 @@ _tmesh_ctl_disconnect(void)
   close(_tmesh_ctl_client_fd);
   _tmesh_ctl_client_fd = -1;
   _tmesh_ctl_inlen = 0;
+
+  /* subscriptions end with the connection: */
+  memset(_tmesh_ctl_sub_console, 0, sizeof(_tmesh_ctl_sub_console));
+  _tmesh_ctl_sub_log = FALSE;
 }
 
 static int
@@ -450,15 +477,68 @@ _tmesh_ctl_send(cJSON *msg)
   cJSON_Delete(msg);
 }
 
+static char *_tmesh_ctl_encode_console _TME_P((const tme_uint8_t *, size_t, int));
+static void _tmesh_ctl_add_hex _TME_P((cJSON *, const char *, const tme_uint8_t *, size_t));
+
+/* this adds what a watch saw to an object: */
+static void
+_tmesh_ctl_add_trace_event(cJSON *o, const struct tme_debug_trace_event *event)
+{
+  struct tme_debug_cpu *cpu;
+  const char *name;
+  char buf[24];
+
+  cpu = _tmesh_ctl_cpu(event->tme_debug_trace_cpu);
+  cJSON_AddNumberToObject(o, "seq", (double) event->tme_debug_trace_seq);
+  cJSON_AddNumberToObject(o, "ninstrs", (double) event->tme_debug_trace_insns);
+  cJSON_AddNumberToObject(o, "cpu", event->tme_debug_trace_cpu);
+  cJSON_AddNumberToObject(o, "watch", event->tme_debug_trace_watch);
+  _tmesh_ctl_add_addr(o, "pc", cpu, event->tme_debug_trace_pc);
+  if (event->tme_debug_trace_kind == TME_DEBUG_WATCH_EXCEPTION) {
+    cJSON_AddStringToObject(o, "kind", "exception");
+    cJSON_AddStringToObject(o, "name", event->tme_debug_trace_name);
+    cJSON_AddNumberToObject(o, "code", event->tme_debug_trace_code);
+    _tmesh_ctl_add_addr(o, "vector", cpu, event->tme_debug_trace_vector);
+    if (event->tme_debug_trace_vaddr_valid) {
+      _tmesh_ctl_add_addr(o, "vaddr", cpu, event->tme_debug_trace_vaddr);
+    }
+  }
+  else {
+    cJSON_AddStringToObject(o, "kind", "device");
+    name = tme_debug_element_name(event->tme_debug_trace_element);
+    cJSON_AddStringToObject(o, "device", name != NULL ? name : "");
+    snprintf(buf, sizeof(buf), "0x%llx", (unsigned long long) event->tme_debug_trace_offset);
+    cJSON_AddStringToObject(o, "offset", buf);
+    cJSON_AddStringToObject(o, "access",
+			    event->tme_debug_trace_access == TME_DEBUG_ACCESS_WRITE ? "w" : "r");
+    cJSON_AddNumberToObject(o, "len", event->tme_debug_trace_len);
+    if (event->tme_debug_trace_errno == TME_OK) {
+      _tmesh_ctl_add_hex(o, "data", event->tme_debug_trace_data, event->tme_debug_trace_data_count);
+    }
+    else {
+      cJSON_AddStringToObject(o, "error", strerror(event->tme_debug_trace_errno));
+    }
+  }
+}
+
 static void
 _tmesh_ctl_add_stop(cJSON *o, const struct _tmesh_ctl_stop *stop)
 {
   struct tme_debug_cpu *cpu;
+  struct tme_debug_trace_event event;
+  tme_uint64_t start, total;
 
   cpu = _tmesh_ctl_cpu(stop->cpu);
   cJSON_AddStringToObject(o, "reason", stop->reason);
   if (stop->bp > 0) {
     cJSON_AddNumberToObject(o, "bp", stop->bp);
+  }
+  if (stop->watch > 0) {
+    cJSON_AddNumberToObject(o, "watch", stop->watch);
+    if (tme_debug_trace_read(stop->watch_seq, &event, 1, &start, &total) == 1
+	&& start == stop->watch_seq) {
+      _tmesh_ctl_add_trace_event(cJSON_AddObjectToObject(o, "hit"), &event);
+    }
   }
   cJSON_AddNumberToObject(o, "cpu", stop->cpu);
   _tmesh_ctl_add_addr(o, "pc", cpu, stop->pc);
@@ -488,11 +568,99 @@ _tmesh_ctl_stop_hook(struct tme_debug_cpu *cpu)
 	   cpu->tme_debug_cpu_stop_reason != NULL ? cpu->tme_debug_cpu_stop_reason : "other");
   stop->pc = (*cpu->tme_debug_cpu_pc)(cpu);
   stop->bp = cpu->tme_debug_cpu_breakpoint_hit;
+  stop->watch = cpu->tme_debug_cpu_watch_hit;
+  stop->watch_seq = cpu->tme_debug_cpu_watch_seq;
   stop->insns = (*cpu->tme_debug_cpu_insns)(cpu);
   stop->valid = TRUE;
 }
 
 static void _tmesh_ctl_run_until_clear _TME_P((void));
+
+/* this sends what has happened that the client has subscribed to: */
+static void
+_tmesh_ctl_subs_send(void)
+{
+  struct tme_debug_console *console;
+  tme_uint64_t start, total;
+  tme_uint8_t *buf;
+  unsigned int count, msg_i;
+  unsigned long dropped;
+  char *data;
+  cJSON *ev;
+  int console_i;
+
+  /* console output: */
+  for (console = tme_debug_consoles(), console_i = 0;
+       console != NULL && console_i < TMESH_CTL_CONSOLES_MAX;
+       console = console->tme_debug_console_next, console_i++) {
+    if (!_tmesh_ctl_sub_console[console_i]) {
+      continue;
+    }
+    buf = NULL;
+    for (;;) {
+      (void) tme_debug_console_read(console, ~(tme_uint64_t) 0, NULL, 0, &start, &total);
+      if (total <= _tmesh_ctl_sub_console_sent[console_i]
+	  || _tmesh_ctl_client_fd < 0) {
+	break;
+      }
+      if (buf == NULL) {
+	buf = tme_new(tme_uint8_t, TMESH_CTL_READ_DEFAULT);
+      }
+      count = tme_debug_console_read(console, _tmesh_ctl_sub_console_sent[console_i],
+				     buf, TMESH_CTL_READ_DEFAULT, &start, &total);
+      ev = cJSON_CreateObject();
+      cJSON_AddStringToObject(ev, "event", "console");
+      cJSON_AddNumberToObject(ev, "console", console_i);
+      cJSON_AddNumberToObject(ev, "start", (double) start);
+      cJSON_AddNumberToObject(ev, "offset", (double) (start + count));
+      if (start > _tmesh_ctl_sub_console_sent[console_i]) {
+	cJSON_AddBoolToObject(ev, "dropped", TRUE);
+      }
+      data = _tmesh_ctl_encode_console(buf, count, FALSE);
+      cJSON_AddStringToObject(ev, "data", data);
+      tme_free(data);
+      _tmesh_ctl_send(ev);
+      _tmesh_ctl_sub_console_sent[console_i] = start + count;
+    }
+    if (buf != NULL) {
+      tme_free(buf);
+    }
+  }
+
+  /* log messages: */
+  if (_tmesh_ctl_log_count == 0 && _tmesh_ctl_log_dropped == 0) {
+    return;
+  }
+  tme_mutex_lock(&_tmesh_ctl_log_mutex);
+  for (msg_i = 0; msg_i < _tmesh_ctl_log_count; msg_i++) {
+    ev = cJSON_CreateObject();
+    cJSON_AddStringToObject(ev, "event", "log");
+    cJSON_AddStringToObject(ev, "element", _tmesh_ctl_log_queue[msg_i].element);
+    cJSON_AddNumberToObject(ev, "level", _tmesh_ctl_log_queue[msg_i].level);
+    cJSON_AddStringToObject(ev, "msg", _tmesh_ctl_log_queue[msg_i].message);
+    if (_tmesh_ctl_log_queue[msg_i].err != TME_OK) {
+      cJSON_AddStringToObject(ev, "error", strerror(_tmesh_ctl_log_queue[msg_i].err));
+    }
+    free(_tmesh_ctl_log_queue[msg_i].element);
+    free(_tmesh_ctl_log_queue[msg_i].message);
+    if (_tmesh_ctl_sub_log) {
+      _tmesh_ctl_send(ev);
+    }
+    else {
+      cJSON_Delete(ev);
+    }
+  }
+  _tmesh_ctl_log_count = 0;
+  dropped = _tmesh_ctl_log_dropped;
+  _tmesh_ctl_log_dropped = 0;
+  tme_mutex_unlock(&_tmesh_ctl_log_mutex);
+  if (dropped > 0 && _tmesh_ctl_sub_log) {
+    ev = cJSON_CreateObject();
+    cJSON_AddStringToObject(ev, "event", "log_dropped");
+    cJSON_AddNumberToObject(ev, "count", dropped);
+    _tmesh_ctl_send(ev);
+  }
+}
 
 /* this handles a stop that a CPU has told about: */
 static void
@@ -505,6 +673,9 @@ _tmesh_ctl_stop_handle(void)
   if (!stop->valid) {
     return;
   }
+
+  /* what happened before the stop is sent first: */
+  _tmesh_ctl_subs_send();
 
   /* the end of a run_until, because of one of its conditions or not: */
   if (_tmesh_ctl_ru.active) {
@@ -816,7 +987,6 @@ _TMESH_CTL_HANDLER(_tmesh_ctl_cmd_regs)
   return (TRUE);
 }
 
-static char *_tmesh_ctl_encode_console _TME_P((const tme_uint8_t *, size_t, int));
 static tme_uint8_t *_tmesh_ctl_decode_input _TME_P((const char *, int, size_t *, struct _tmesh_ctl_error *));
 
 _TMESH_CTL_HANDLER(_tmesh_ctl_cmd_reg_set)
@@ -995,7 +1165,7 @@ _TMESH_CTL_HANDLER(_tmesh_ctl_cmd_break_del)
   struct tme_debug_cpu *cpu;
   tme_int64_t id;
 
-  if (!_tmesh_ctl_get_int(req, "id", -1, &id, err)) {
+  if (!_tmesh_ctl_get_int(req, "bp", -1, &id, err)) {
     return (FALSE);
   }
   for (cpu = tme_debug_cpus(); cpu != NULL; cpu = cpu->tme_debug_cpu_next) {
@@ -1221,6 +1391,12 @@ _TMESH_CTL_HANDLER(_tmesh_ctl_cmd_run_until)
 	return (_tmesh_ctl_fail(err, "bad_arg", "patterns should be non-empty strings"));
       }
     }
+    cJSON_ArrayForEach(p, console_req) {
+      if (strcmp(p->string, "console") && strcmp(p->string, "pattern")
+	  && strcmp(p->string, "since") && strcmp(p->string, "input")) {
+	return (_tmesh_ctl_fail(err, "bad_arg", "unknown parameter 'console.%s'; 'console' takes: console pattern since input", p->string));
+      }
+    }
     input = cJSON_GetObjectItemCaseSensitive(console_req, "input");
     if (input != NULL && !cJSON_IsString(input)) {
       return (_tmesh_ctl_fail(err, "bad_arg", "'input' should be a string"));
@@ -1292,29 +1468,401 @@ _TMESH_CTL_HANDLER(_tmesh_ctl_cmd_run_until)
   return (TRUE);
 }
 
+/* watches and the trace: */
+
+static void
+_tmesh_ctl_watch_free(struct tme_debug_watch *watch)
+{
+  unsigned int name_i;
+
+  for (name_i = 0; name_i < watch->tme_debug_watch_names_count; name_i++) {
+    tme_free(watch->tme_debug_watch_names[name_i]);
+  }
+  if (watch->tme_debug_watch_names != NULL) {
+    tme_free(watch->tme_debug_watch_names);
+  }
+  tme_free(watch);
+}
+
+/* this returns nonzero if an element has a region on a bus: */
+static int
+_tmesh_ctl_is_device(struct tme_element *element)
+{
+  struct tme_debug_region *regions;
+  unsigned int count, region_i;
+  int found;
+
+  count = tme_debug_regions(NULL, 0);
+  regions = tme_new(struct tme_debug_region, count + 1);
+  count = tme_debug_regions(regions, count);
+  found = FALSE;
+  for (region_i = 0; region_i < count; region_i++) {
+    found |= (regions[region_i].tme_debug_region_element == element);
+  }
+  tme_free(regions);
+  return (found);
+}
+
+_TMESH_CTL_HANDLER(_tmesh_ctl_cmd_watch_add)
+{
+  cJSON *kind, *names, *n, *device, *access, *action;
+  struct tme_debug_watch *watch;
+  struct tme_element *element;
+  tme_int64_t offset, len;
+  char buf[24];
+
+  kind = cJSON_GetObjectItemCaseSensitive(req, "kind");
+  names = cJSON_GetObjectItemCaseSensitive(req, "names");
+  device = cJSON_GetObjectItemCaseSensitive(req, "device");
+  access = cJSON_GetObjectItemCaseSensitive(req, "access");
+  action = cJSON_GetObjectItemCaseSensitive(req, "action");
+  if (action != NULL
+      && !(cJSON_IsString(action)
+	   && (!strcmp(action->valuestring, "stop")
+	       || !strcmp(action->valuestring, "trace")))) {
+    return (_tmesh_ctl_fail(err, "bad_arg", "'action' should be \"stop\" or \"trace\""));
+  }
+  watch = tme_new0(struct tme_debug_watch, 1);
+  watch->tme_debug_watch_stop = (action == NULL || !strcmp(action->valuestring, "stop"));
+
+  /* an exception watch: */
+  if (cJSON_IsString(kind) && !strcmp(kind->valuestring, "exception")) {
+    watch->tme_debug_watch_kind = TME_DEBUG_WATCH_EXCEPTION;
+    if (device != NULL || access != NULL
+	|| cJSON_GetObjectItemCaseSensitive(req, "offset") != NULL
+	|| cJSON_GetObjectItemCaseSensitive(req, "len") != NULL) {
+      _tmesh_ctl_watch_free(watch);
+      return (_tmesh_ctl_fail(err, "bad_arg", "an exception watch takes 'names' and 'action'"));
+    }
+    if (names != NULL && !cJSON_IsArray(names)) {
+      n = names;
+      names = NULL;
+    }
+    else {
+      n = NULL;
+    }
+    watch->tme_debug_watch_names = tme_new(char *, (names != NULL ? cJSON_GetArraySize(names) : 1));
+    if (names != NULL) {
+      n = names->child;
+    }
+    for (; n != NULL; n = (names != NULL ? n->next : NULL)) {
+      if (cJSON_IsString(n) && n->valuestring[0] != '\0') {
+	watch->tme_debug_watch_names[watch->tme_debug_watch_names_count++] = tme_strdup(n->valuestring);
+      }
+      else if (cJSON_IsNumber(n) && n->valuedouble >= 0) {
+	snprintf(buf, sizeof(buf), "%lu", (unsigned long) n->valuedouble);
+	watch->tme_debug_watch_names[watch->tme_debug_watch_names_count++] = tme_strdup(buf);
+      }
+      else {
+	_tmesh_ctl_watch_free(watch);
+	return (_tmesh_ctl_fail(err, "bad_arg", "'names' should be an exception name or code, or a list of them"));
+      }
+    }
+  }
+
+  /* a device watch: */
+  else if (cJSON_IsString(kind) && !strcmp(kind->valuestring, "device")) {
+    watch->tme_debug_watch_kind = TME_DEBUG_WATCH_DEVICE;
+    if (names != NULL) {
+      _tmesh_ctl_watch_free(watch);
+      return (_tmesh_ctl_fail(err, "bad_arg", "a device watch takes 'device', 'offset', 'len', 'access' and 'action'"));
+    }
+    if (!cJSON_IsString(device)) {
+      _tmesh_ctl_watch_free(watch);
+      return (_tmesh_ctl_fail(err, "bad_arg", "'device' should be a device's name, as in the devices list"));
+    }
+    element = tme_debug_element_find(device->valuestring);
+    if (element == NULL || !_tmesh_ctl_is_device(element)) {
+      _tmesh_ctl_watch_free(watch);
+      return (_tmesh_ctl_fail(err, "no_such_device", "no device '%s' on a bus (see devices)", device->valuestring));
+    }
+    if (!_tmesh_ctl_get_int(req, "offset", 0, &offset, err)
+	|| !_tmesh_ctl_get_int(req, "len", -1, &len, err)) {
+      _tmesh_ctl_watch_free(watch);
+      return (FALSE);
+    }
+    if (offset < 0 || len == 0 || len < -1) {
+      _tmesh_ctl_watch_free(watch);
+      return (_tmesh_ctl_fail(err, "bad_arg", "'offset' should be at least 0, and 'len' at least 1"));
+    }
+    watch->tme_debug_watch_element = element;
+    watch->tme_debug_watch_offset_first = offset;
+    watch->tme_debug_watch_offset_last = (len < 0 ? ~(tme_uint64_t) 0 : (tme_uint64_t) (offset + len - 1));
+    if (access == NULL
+	|| (cJSON_IsString(access) && !strcmp(access->valuestring, "rw"))) {
+      watch->tme_debug_watch_access = TME_DEBUG_ACCESS_READ | TME_DEBUG_ACCESS_WRITE;
+    }
+    else if (cJSON_IsString(access) && !strcmp(access->valuestring, "r")) {
+      watch->tme_debug_watch_access = TME_DEBUG_ACCESS_READ;
+    }
+    else if (cJSON_IsString(access) && !strcmp(access->valuestring, "w")) {
+      watch->tme_debug_watch_access = TME_DEBUG_ACCESS_WRITE;
+    }
+    else {
+      _tmesh_ctl_watch_free(watch);
+      return (_tmesh_ctl_fail(err, "bad_arg", "'access' should be \"r\", \"w\" or \"rw\""));
+    }
+  }
+
+  else {
+    _tmesh_ctl_watch_free(watch);
+    return (_tmesh_ctl_fail(err, "bad_arg", "'kind' should be \"exception\" or \"device\""));
+  }
+
+  watch->tme_debug_watch_id = ++_tmesh_ctl_watch_next;
+  tme_debug_watch_add(watch);
+  cJSON_AddNumberToObject(result, "id", watch->tme_debug_watch_id);
+  return (TRUE);
+}
+
+_TMESH_CTL_HANDLER(_tmesh_ctl_cmd_watch_del)
+{
+  tme_int64_t id;
+
+  if (!_tmesh_ctl_get_int(req, "watch", -1, &id, err)) {
+    return (FALSE);
+  }
+  if (tme_debug_watch_remove(id) != TME_OK) {
+    return (_tmesh_ctl_fail(err, "no_such_watch", "no watch with id %lld", (long long) id));
+  }
+  return (TRUE);
+}
+
+_TMESH_CTL_HANDLER(_tmesh_ctl_cmd_watch_list)
+{
+  const struct tme_debug_watch *watch;
+  cJSON *list, *o, *names;
+  unsigned int name_i;
+  const char *name;
+  char buf[24];
+
+  list = cJSON_AddArrayToObject(result, "watches");
+  for (watch = tme_debug_watches(); watch != NULL; watch = watch->tme_debug_watch_next) {
+    o = cJSON_CreateObject();
+    cJSON_AddNumberToObject(o, "id", watch->tme_debug_watch_id);
+    if (watch->tme_debug_watch_kind == TME_DEBUG_WATCH_EXCEPTION) {
+      cJSON_AddStringToObject(o, "kind", "exception");
+      if (watch->tme_debug_watch_names_count > 0) {
+	names = cJSON_AddArrayToObject(o, "names");
+	for (name_i = 0; name_i < watch->tme_debug_watch_names_count; name_i++) {
+	  cJSON_AddItemToArray(names, cJSON_CreateString(watch->tme_debug_watch_names[name_i]));
+	}
+      }
+    }
+    else {
+      cJSON_AddStringToObject(o, "kind", "device");
+      name = tme_debug_element_name(watch->tme_debug_watch_element);
+      cJSON_AddStringToObject(o, "device", name != NULL ? name : "");
+      snprintf(buf, sizeof(buf), "0x%llx", (unsigned long long) watch->tme_debug_watch_offset_first);
+      cJSON_AddStringToObject(o, "offset", buf);
+      if (watch->tme_debug_watch_offset_last != ~(tme_uint64_t) 0) {
+	cJSON_AddNumberToObject(o, "len",
+				(double) (watch->tme_debug_watch_offset_last
+					  - watch->tme_debug_watch_offset_first + 1));
+      }
+      cJSON_AddStringToObject(o, "access",
+			      (watch->tme_debug_watch_access
+			       == (TME_DEBUG_ACCESS_READ | TME_DEBUG_ACCESS_WRITE)
+			       ? "rw"
+			       : watch->tme_debug_watch_access == TME_DEBUG_ACCESS_READ
+			       ? "r"
+			       : "w"));
+    }
+    cJSON_AddStringToObject(o, "action", watch->tme_debug_watch_stop ? "stop" : "trace");
+    cJSON_AddItemToArray(list, o);
+  }
+  return (TRUE);
+}
+
+_TMESH_CTL_HANDLER(_tmesh_ctl_cmd_trace_read)
+{
+  struct tme_debug_trace_event *events;
+  tme_int64_t since, max;
+  tme_uint64_t start, total;
+  unsigned int count, event_i;
+  cJSON *list, *o;
+
+  if (!_tmesh_ctl_get_int(req, "since", 0, &since, err)
+      || !_tmesh_ctl_get_int(req, "max", 1000, &max, err)) {
+    return (FALSE);
+  }
+  if (since < 0) {
+    since = 0;
+  }
+  if (max < 1 || max > TME_DEBUG_TRACE_SIZE) {
+    max = TME_DEBUG_TRACE_SIZE;
+  }
+  events = tme_new(struct tme_debug_trace_event, max);
+  count = tme_debug_trace_read(since, events, max, &start, &total);
+  list = cJSON_AddArrayToObject(result, "events");
+  for (event_i = 0; event_i < count; event_i++) {
+    o = cJSON_CreateObject();
+    _tmesh_ctl_add_trace_event(o, &events[event_i]);
+    cJSON_AddItemToArray(list, o);
+  }
+  tme_free(events);
+  cJSON_AddNumberToObject(result, "next", (double) (start + count));
+  cJSON_AddBoolToObject(result, "dropped", start > (tme_uint64_t) since);
+  return (TRUE);
+}
+
+_TMESH_CTL_HANDLER(_tmesh_ctl_cmd_devices)
+{
+  struct tme_debug_region *regions;
+  unsigned int count, region_i;
+  const char *name;
+  cJSON *list, *o;
+  char buf[24];
+
+  count = tme_debug_regions(NULL, 0);
+  regions = tme_new(struct tme_debug_region, count + 1);
+  count = tme_debug_regions(regions, count);
+  list = cJSON_AddArrayToObject(result, "devices");
+  for (region_i = 0; region_i < count; region_i++) {
+    o = cJSON_CreateObject();
+    name = tme_debug_element_name(regions[region_i].tme_debug_region_element);
+    cJSON_AddStringToObject(o, "name", name != NULL ? name : "");
+    name = tme_debug_element_name(regions[region_i].tme_debug_region_bus);
+    cJSON_AddStringToObject(o, "bus", name != NULL ? name : "");
+    snprintf(buf, sizeof(buf), "0x%llx",
+	     (unsigned long long) (regions[region_i].tme_debug_region_address
+				   + regions[region_i].tme_debug_region_first));
+    cJSON_AddStringToObject(o, "base", buf);
+    cJSON_AddNumberToObject(o, "length",
+			    (double) (regions[region_i].tme_debug_region_last
+				      - regions[region_i].tme_debug_region_first + 1));
+    if (regions[region_i].tme_debug_region_first != 0) {
+      snprintf(buf, sizeof(buf), "0x%llx", (unsigned long long) regions[region_i].tme_debug_region_first);
+      cJSON_AddStringToObject(o, "offset", buf);
+    }
+    cJSON_AddItemToArray(list, o);
+  }
+  tme_free(regions);
+  return (TRUE);
+}
+
+/* events as they happen: */
+
+_TMESH_CTL_HANDLER(_tmesh_ctl_cmd_subscribe)
+{
+  cJSON *console_req, *log, *c, *list;
+  struct tme_debug_console *console;
+  int want[TMESH_CTL_CONSOLES_MAX];
+  tme_uint64_t start, total;
+  int console_i;
+
+  console_req = cJSON_GetObjectItemCaseSensitive(req, "console");
+  log = cJSON_GetObjectItemCaseSensitive(req, "log");
+
+  /* the consoles: */
+  if (console_req != NULL) {
+    memset(want, 0, sizeof(want));
+    if (cJSON_IsTrue(console_req)) {
+      for (console_i = 0; console_i < TMESH_CTL_CONSOLES_MAX; console_i++) {
+	want[console_i] = (_tmesh_ctl_console(console_i) != NULL);
+      }
+    }
+    else if (cJSON_IsArray(console_req)) {
+      cJSON_ArrayForEach(c, console_req) {
+	if (!cJSON_IsNumber(c)) {
+	  return (_tmesh_ctl_fail(err, "bad_arg", "'console' should be true, false, or a list of console ids"));
+	}
+	console_i = c->valueint;
+	if (console_i < 0 || console_i >= TMESH_CTL_CONSOLES_MAX
+	    || _tmesh_ctl_console(console_i) == NULL) {
+	  return (_tmesh_ctl_fail(err, "no_such_console", "no console %d", console_i));
+	}
+	want[console_i] = TRUE;
+      }
+    }
+    else if (!cJSON_IsFalse(console_req)) {
+      return (_tmesh_ctl_fail(err, "bad_arg", "'console' should be true, false, or a list of console ids"));
+    }
+  }
+  if (log != NULL && !cJSON_IsBool(log)) {
+    return (_tmesh_ctl_fail(err, "bad_arg", "'log' should be true or false"));
+  }
+
+  /* consoles newly subscribed to are sent from now on: */
+  if (console_req != NULL) {
+    for (console_i = 0; console_i < TMESH_CTL_CONSOLES_MAX; console_i++) {
+      if (want[console_i] && !_tmesh_ctl_sub_console[console_i]) {
+	console = _tmesh_ctl_console(console_i);
+	(void) tme_debug_console_read(console, ~(tme_uint64_t) 0, NULL, 0, &start, &total);
+	_tmesh_ctl_sub_console_sent[console_i] = total;
+      }
+      _tmesh_ctl_sub_console[console_i] = want[console_i];
+    }
+  }
+  if (log != NULL) {
+    _tmesh_ctl_sub_log = cJSON_IsTrue(log);
+  }
+
+  list = cJSON_AddArrayToObject(result, "console");
+  for (console_i = 0; console_i < TMESH_CTL_CONSOLES_MAX; console_i++) {
+    if (_tmesh_ctl_sub_console[console_i]) {
+      cJSON_AddItemToArray(list, cJSON_CreateNumber(console_i));
+    }
+  }
+  cJSON_AddBoolToObject(result, "log", _tmesh_ctl_sub_log);
+  return (TRUE);
+}
+
+/* the commands, and their parameters: */
 static const struct {
   const char *name;
   int (*func) _TME_P((cJSON *, cJSON *, struct _tmesh_ctl_error *));
+  const char *params;
 } _tmesh_ctl_cmds[] = {
-  { "hello", _tmesh_ctl_cmd_hello },
-  { "status", _tmesh_ctl_cmd_status },
-  { "pause", _tmesh_ctl_cmd_pause },
-  { "continue", _tmesh_ctl_cmd_continue },
-  { "step", _tmesh_ctl_cmd_step },
-  { "quit", _tmesh_ctl_cmd_quit },
-  { "raw", _tmesh_ctl_cmd_raw },
-  { "regs", _tmesh_ctl_cmd_regs },
-  { "reg_set", _tmesh_ctl_cmd_reg_set },
-  { "mem_read", _tmesh_ctl_cmd_mem_read },
-  { "mem_write", _tmesh_ctl_cmd_mem_write },
-  { "break_add", _tmesh_ctl_cmd_break_add },
-  { "break_del", _tmesh_ctl_cmd_break_del },
-  { "break_list", _tmesh_ctl_cmd_break_list },
-  { "console_read", _tmesh_ctl_cmd_console_read },
-  { "console_write", _tmesh_ctl_cmd_console_write },
-  { "run_until", _tmesh_ctl_cmd_run_until },
-  { NULL, NULL }
+  { "hello", _tmesh_ctl_cmd_hello, "" },
+  { "status", _tmesh_ctl_cmd_status, "" },
+  { "pause", _tmesh_ctl_cmd_pause, "" },
+  { "continue", _tmesh_ctl_cmd_continue, "" },
+  { "step", _tmesh_ctl_cmd_step, "cpu n" },
+  { "quit", _tmesh_ctl_cmd_quit, "" },
+  { "raw", _tmesh_ctl_cmd_raw, "line" },
+  { "regs", _tmesh_ctl_cmd_regs, "cpu names" },
+  { "reg_set", _tmesh_ctl_cmd_reg_set, "cpu name value" },
+  { "mem_read", _tmesh_ctl_cmd_mem_read, "cpu addr len space" },
+  { "mem_write", _tmesh_ctl_cmd_mem_write, "cpu addr data space" },
+  { "break_add", _tmesh_ctl_cmd_break_add, "cpu pc" },
+  { "break_del", _tmesh_ctl_cmd_break_del, "bp" },
+  { "break_list", _tmesh_ctl_cmd_break_list, "" },
+  { "console_read", _tmesh_ctl_cmd_console_read, "console since max encoding" },
+  { "console_write", _tmesh_ctl_cmd_console_write, "console data encoding" },
+  { "run_until", _tmesh_ctl_cmd_run_until, "console cpu pc insns timeout_ms" },
+  { "watch_add", _tmesh_ctl_cmd_watch_add, "kind names device offset len access action" },
+  { "watch_del", _tmesh_ctl_cmd_watch_del, "watch" },
+  { "watch_list", _tmesh_ctl_cmd_watch_list, "" },
+  { "trace_read", _tmesh_ctl_cmd_trace_read, "since max" },
+  { "devices", _tmesh_ctl_cmd_devices, "" },
+  { "subscribe", _tmesh_ctl_cmd_subscribe, "console log" },
+  { NULL, NULL, NULL }
 };
+
+/* this returns nonzero if a word is in a list of words: */
+static int
+_tmesh_ctl_word_in(const char *word, const char *words)
+{
+  size_t len;
+
+  len = strlen(word);
+  for (;;) {
+    while (*words == ' ') {
+      words++;
+    }
+    if (*words == '\0') {
+      return (FALSE);
+    }
+    if (!strncmp(words, word, len)
+	&& (words[len] == ' ' || words[len] == '\0')) {
+      return (TRUE);
+    }
+    while (*words != ' ' && *words != '\0') {
+      words++;
+    }
+  }
+}
 
 /* this stops listening, and removes a Unix socket: */
 static void
@@ -1329,6 +1877,23 @@ _tmesh_ctl_close(void)
     free(_tmesh_ctl_unix_path);
     _tmesh_ctl_unix_path = NULL;
   }
+}
+
+/* this returns the first parameter of a request that isn't id, cmd,
+   or in the list given, or NULL: */
+static cJSON *
+_tmesh_ctl_unknown_param(cJSON *req, const char *params)
+{
+  cJSON *item;
+
+  cJSON_ArrayForEach(item, req) {
+    if (strcmp(item->string, "id")
+	&& strcmp(item->string, "cmd")
+	&& !_tmesh_ctl_word_in(item->string, params)) {
+      return (item);
+    }
+  }
+  return (NULL);
 }
 
 /* this handles one request, and sends its response: */
@@ -1374,6 +1939,16 @@ _tmesh_ctl_handle_line(const char *line, size_t len)
     }
     if (_tmesh_ctl_cmds[k].name == NULL) {
       _tmesh_ctl_fail(&err, "unknown_cmd", "unknown command '%s'", cmd->valuestring);
+    }
+
+    /* a parameter the command doesn't take is a mistake, not
+       something to ignore: */
+    else if ((e = _tmesh_ctl_unknown_param(req, _tmesh_ctl_cmds[k].params)) != NULL) {
+      _tmesh_ctl_fail(&err, "bad_arg", "unknown parameter '%s'; %s takes: %s",
+		      e->string, cmd->valuestring,
+		      (_tmesh_ctl_cmds[k].params[0] != '\0'
+		       ? _tmesh_ctl_cmds[k].params
+		       : "nothing"));
     }
     else {
       result = cJSON_CreateObject();
@@ -1513,6 +2088,7 @@ _tmesh_ctl_th(void *unused)
     _tmesh_ctl_accept();
     _tmesh_ctl_read();
     _tmesh_ctl_stop_handle();
+    _tmesh_ctl_subs_send();
 
     /* wait for a request, or a few milliseconds.  with cooperative
        threads, an event set that is waited on belongs to the threads
@@ -1619,8 +2195,31 @@ tmesh_ctl_start(const char *spec, int (*command) _TME_P((const char *, char **))
   fcntl(_tmesh_ctl_listen_fd, F_SETFL, flags | O_NONBLOCK);
 
   _tmesh_ctl_inbuf = tme_new(char, TMESH_CTL_MAX_LINE);
+  tme_mutex_init(&_tmesh_ctl_log_mutex);
   tme_debug_set_stop_hook(_tmesh_ctl_stop_hook);
   tme_thread_create(&thread, (tme_thread_t) _tmesh_ctl_th, NULL);
+}
+
+/* this gives a log message to a client that has subscribed to the
+   log.  it is called on any thread: */
+void
+tmesh_ctl_log(const char *element, unsigned long level, int err, const char *message)
+{
+  if (!_tmesh_ctl_sub_log) {
+    return;
+  }
+  tme_mutex_lock(&_tmesh_ctl_log_mutex);
+  if (_tmesh_ctl_log_count < TMESH_CTL_LOG_MAX) {
+    _tmesh_ctl_log_queue[_tmesh_ctl_log_count].element = strdup(element != NULL ? element : "");
+    _tmesh_ctl_log_queue[_tmesh_ctl_log_count].level = level;
+    _tmesh_ctl_log_queue[_tmesh_ctl_log_count].err = err;
+    _tmesh_ctl_log_queue[_tmesh_ctl_log_count].message = strdup(message != NULL ? message : "");
+    _tmesh_ctl_log_count++;
+  }
+  else {
+    _tmesh_ctl_log_dropped++;
+  }
+  tme_mutex_unlock(&_tmesh_ctl_log_mutex);
 }
 
 /*****************************************************************************/
@@ -1633,8 +2232,9 @@ _tmesh_ctl_client_usage(void)
   fprintf(stderr,
 	  "usage: %s --ctl unix:PATH|tcp:PORT [--wait] [--timeout SECONDS] COMMAND [ARGUMENT]\n"
 	  "The argument is a JSON object with the request's parameters, or a plain value\n"
-	  "for raw (line), step (n), break_add (pc), break_del (id), console_read (since),\n"
-	  "console_write (data), or run_until (a console pattern).\n",
+	  "for raw (line), step (n), break_add (pc), break_del (bp), console_read (since),\n"
+	  "console_write (data), mem_read (addr), watch_del (watch), trace_read (since),\n"
+	  "or run_until (a console pattern).\n",
 	  argv0);
   return (2);
 }
@@ -1745,10 +2345,12 @@ tmesh_ctl_client(int argc, char **argv)
     { "raw", "line", FALSE },
     { "step", "n", TRUE },
     { "break_add", "pc", FALSE },
-    { "break_del", "id", TRUE },
+    { "break_del", "bp", TRUE },
     { "console_read", "since", TRUE },
     { "console_write", "data", FALSE },
     { "mem_read", "addr", FALSE },
+    { "watch_del", "watch", TRUE },
+    { "trace_read", "since", TRUE },
     { NULL, NULL, FALSE }
   };
   const char *spec, *cmd, *arg;
@@ -1938,6 +2540,11 @@ tmesh_ctl_client(int argc, char **argv)
 {
   fprintf(stderr, "%s: --ctl isn't supported on Windows\n", argv0);
   return (2);
+}
+
+void
+tmesh_ctl_log(const char *element, unsigned long level, int err, const char *message)
+{
 }
 
 #endif /* WIN32 */

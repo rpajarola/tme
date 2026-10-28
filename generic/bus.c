@@ -39,6 +39,7 @@ _TME_RCSID("$Id: bus.c,v 1.14 2009/08/29 17:41:17 fredette Exp $");
 /* includes: */
 #include <tme/generic/bus.h>
 #include <tme/misc.h>
+#include <tme/debug.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -210,6 +211,9 @@ tme_bus_tlb_fill(struct tme_bus *bus,
 
     /* if that succeeded: */
     if (rc == TME_OK) {
+
+      /* let the debugger watch the device's cycles: */
+      tme_debug_bus_tlb(conn_bus_other->tme_bus_connection.tme_connection_element, tlb);
       
       /* create the mapping TLB entry: */
       tlb_bus.tme_bus_tlb_addr_first =

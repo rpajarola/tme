@@ -1263,11 +1263,38 @@ tme_m68k_exception_process_start(struct tme_m68k *ic, unsigned int ipl)
   }
 }
 
+/* this returns the name of an exception vector, for the debugger: */
+static const char *
+_tme_m68k_exception_name(tme_uint8_t vector)
+{
+  static const char * const names[] = {
+    "reset", "reset", "bus_error", "address_error",
+    "illegal_instruction", "zero_divide", "chk", "trapv",
+    "privilege_violation", "trace", "line_a", "line_f",
+    "reserved", "coprocessor_protocol", "format_error", "uninitialized_interrupt",
+    "reserved", "reserved", "reserved", "reserved",
+    "reserved", "reserved", "reserved", "reserved",
+    "spurious_interrupt", "interrupt_level_1", "interrupt_level_2", "interrupt_level_3",
+    "interrupt_level_4", "interrupt_level_5", "interrupt_level_6", "interrupt_level_7",
+    "trap_0", "trap_1", "trap_2", "trap_3", "trap_4", "trap_5", "trap_6", "trap_7",
+    "trap_8", "trap_9", "trap_10", "trap_11", "trap_12", "trap_13", "trap_14", "trap_15",
+    "fp_unordered", "fp_inexact", "fp_divide_by_zero", "fp_underflow",
+    "fp_operand_error", "fp_overflow", "fp_snan", "fp_unimplemented",
+    "mmu_configuration", "mmu_illegal", "mmu_access_level", "reserved",
+    "reserved", "reserved", "reserved", "reserved",
+  };
+
+  return (vector < TME_ARRAY_ELS(names)
+	  ? names[vector]
+	  : "interrupt_vector");
+}
+
 /* this finishes processing an m68k exception: */
 void
 tme_m68k_exception_process_finish(struct tme_m68k *ic, tme_uint8_t format, tme_uint8_t vector)
 {
   tme_uint16_t vector_offset;
+  tme_uint32_t pc;
 
   /* stack the frame format and vector offset, unless this is a 68000: */
   vector_offset = ((tme_uint16_t) vector) << 2;
@@ -1286,7 +1313,20 @@ tme_m68k_exception_process_finish(struct tme_m68k *ic, tme_uint8_t format, tme_u
     ic->_tme_m68k_ea_function_code = TME_M68K_FC_SD;
     ic->_tme_m68k_ea_address = ic->tme_m68k_ireg_vbr + vector_offset;
   }
+  pc = ic->tme_m68k_ireg_pc;
   tme_m68k_read_mem32(ic, TME_M68K_IREG_PC);
+
+  /* tell the debugger, unless restarting skipped the read: */
+  if (!TME_M68K_SEQUENCE_RESTARTING) {
+    tme_debug_exception(&ic->_tme_m68k_debug,
+			_tme_m68k_exception_name(vector),
+			vector,
+			pc,
+			ic->tme_m68k_ireg_pc,
+			(vector == TME_M68K_VECTOR_BERR
+			 || vector == TME_M68K_VECTOR_AERR),
+			ic->_tme_m68k_group0_address);
+  }
 }
 
 /* common m68000 and m68010 exception processing: */

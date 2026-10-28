@@ -1,5 +1,29 @@
 2026-10-28  Rico Pajarola  <rp@servium.ch>
 
+	* tmesh/tmesh-ctl.c, tmesh/tmesh-ctl.h, tmesh/tmesh.c: Added the
+	control socket's watch_add, watch_del, watch_list, trace_read,
+	devices and subscribe commands, console and log events, and stops
+	for watches.  A parameter a command doesn't take is now an error.
+	break_del takes the breakpoint as bp, not id, which is the
+	request's.
+
+	* libtme/debug.c, tme/debug.h: Added watches on CPU exceptions and
+	on accesses to devices' registers, the trace of what they see, the
+	names of all elements, and the regions of the devices on buses.
+
+	* generic/bus.c, generic/bus-el.c: Buses register with the
+	debugger, and a device's TLB entries call the debugger's cycle
+	handler, which watches the cycle and calls the device's.
+
+	* machine/sun3/sun3-mmu.c: Look through the debugger's cycle
+	handler for the memory error register's.
+
+	* ic/m68k/m68k-misc.c, ic/sparc/sparc-misc.c: Tell the debugger
+	about exceptions and traps, with their names.
+
+	* tme/tme.texi: Documented the new control socket commands and
+	events.
+
 	* libtme/host/x86/rc-x86-rws.c (tme_recode_host_rw_thunk_new):
 	On x86-64, a read/write thunk's call to its guest function didn't
 	leave the stack pointer 16-byte aligned, as the ABI requires, and

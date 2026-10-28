@@ -38,6 +38,7 @@ _TME_RCSID("$Id: sun3-mmu.c,v 1.6 2009/08/30 14:25:21 fredette Exp $");
 
 /* includes: */
 #include "sun3-impl.h"
+#include <tme/debug.h>
 
 /* macros: */
 
@@ -333,8 +334,8 @@ _tme_sun3_tlb_fill(struct tme_sun3 *sun3, struct tme_bus_tlb *tlb, tme_uint8_t c
     }
     
     /* if this TLB's bus cycle handler isn't for the memory error
-       register itself: */
-    if (tlb->tme_bus_tlb_cycle != _tme_sun3_memerr_cycle_handler) {
+       register itself (which the debugger may be watching): */
+    if (tme_debug_bus_tlb_cycle(tlb) != _tme_sun3_memerr_cycle_handler) {
 
       /* there must be no other TLB entry already involved in the test: */
       if (sun3->tme_sun3_memerr_tlb != NULL) {

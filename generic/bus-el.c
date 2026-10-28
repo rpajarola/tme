@@ -39,6 +39,7 @@ _TME_RCSID("$Id: bus-el.c,v 1.18 2009/08/29 17:59:17 fredette Exp $");
 /* includes: */
 #define TME_BUS_VERSION TME_X_VERSION(0, 0)
 #include <tme/generic/bus.h>
+#include <tme/debug.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -946,6 +947,9 @@ TME_ELEMENT_SUB_NEW_DECL(tme_generic,bus) {
   /* fill the element: */
   element->tme_element_private = bus;
   element->tme_element_connections_new = _tme_bus_connections_new;
+
+  /* let the debugger list and watch the devices on this bus: */
+  tme_debug_bus_register(element, bus);
 
   return (TME_OK);
 }

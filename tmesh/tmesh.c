@@ -360,6 +360,12 @@ _tmesh_log_output(struct tme_log_handle *handle)
 	? stderr
 	: _tmesh_log);
 
+  /* give it to any control socket client: */
+  tmesh_ctl_log((char *) handle->tme_log_handle_private,
+		handle->tme_log_handle_level,
+		handle->tme_log_handle_errno,
+		handle->tme_log_handle_message);
+
   fprintf(fp,
 	  "[%s.%lu]",
 	  (char *) handle->tme_log_handle_private,

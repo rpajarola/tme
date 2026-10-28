@@ -275,6 +275,13 @@ _tme_sparc_debug_pc(struct tme_debug_cpu *debug)
   return (_tme_sparc_debug_ireg(debug->tme_debug_cpu_private, TME_SPARC_IREG_PC_NEXT));
 }
 
+/* while an instruction runs, TME_SPARC_IREG_PC is its PC: */
+static tme_uint64_t
+_tme_sparc_debug_pc_now(struct tme_debug_cpu *debug)
+{
+  return (_tme_sparc_debug_ireg(debug->tme_debug_cpu_private, TME_SPARC_IREG_PC));
+}
+
 static tme_uint64_t
 _tme_sparc_debug_insns(struct tme_debug_cpu *debug)
 {
@@ -1184,6 +1191,7 @@ tme_sparc_new(struct tme_sparc *ic, const char * const *args, const void *extra,
   ic->_tme_sparc_debug.tme_debug_cpu_reg = _tme_sparc_debug_reg;
   ic->_tme_sparc_debug.tme_debug_cpu_reg_set = _tme_sparc_debug_reg_set;
   ic->_tme_sparc_debug.tme_debug_cpu_pc = _tme_sparc_debug_pc;
+  ic->_tme_sparc_debug.tme_debug_cpu_pc_now = _tme_sparc_debug_pc_now;
   ic->_tme_sparc_debug.tme_debug_cpu_insns = _tme_sparc_debug_insns;
   if (TME_SPARC_VERSION(ic) < 9) {
     ic->_tme_sparc_debug.tme_debug_cpu_mem = _tme_sparc32_debug_mem;
@@ -1359,6 +1367,96 @@ tme_sparc32_external_check(struct tme_sparc *ic,
   /* there are no traps to process: */
 }
 
+/* this returns the name of a trap, for the debugger: */
+static const char *
+_tme_sparc_trap_name(const struct tme_sparc *ic, tme_uint32_t tt)
+{
+  static const char * const interrupt_level[16] = {
+    "interrupt_level_0", "interrupt_level_1", "interrupt_level_2", "interrupt_level_3",
+    "interrupt_level_4", "interrupt_level_5", "interrupt_level_6", "interrupt_level_7",
+    "interrupt_level_8", "interrupt_level_9", "interrupt_level_10", "interrupt_level_11",
+    "interrupt_level_12", "interrupt_level_13", "interrupt_level_14", "interrupt_level_15",
+  };
+
+  if (TME_SPARC_VERSION(ic) < 9) {
+    if (tt >= 0x80) {
+      return ("trap_instruction");
+    }
+    if (tt > 0x10 && tt < 0x20) {
+      return (interrupt_level[tt - 0x10]);
+    }
+    switch (tt) {
+    case 0x01: return ("instruction_access_exception");
+    case 0x02: return ("illegal_instruction");
+    case 0x03: return ("privileged_instruction");
+    case 0x04: return ("fp_disabled");
+    case 0x05: return ("window_overflow");
+    case 0x06: return ("window_underflow");
+    case 0x07: return ("mem_address_not_aligned");
+    case 0x08: return ("fp_exception");
+    case 0x09: return ("data_access_exception");
+    case 0x0a: return ("tag_overflow");
+    case 0x0b: return ("watchpoint_detected");
+    case 0x20: return ("r_register_access_error");
+    case 0x21: return ("instruction_access_error");
+    case 0x24: return ("cp_disabled");
+    case 0x25: return ("unimplemented_FLUSH");
+    case 0x28: return ("cp_exception");
+    case 0x29: return ("data_access_error");
+    case 0x2a: return ("division_by_zero");
+    case 0x2b: return ("data_store_error");
+    case 0x2c: return ("data_access_MMU_miss");
+    case 0x3c: return ("instruction_access_MMU_miss");
+    default: break;
+    }
+    return ("unknown");
+  }
+
+  if (tt >= 0x100) {
+    return ("trap_instruction");
+  }
+  if (tt > 0x40 && tt < 0x50) {
+    return (interrupt_level[tt - 0x40]);
+  }
+  if (tt >= 0x80 && tt < 0x100) {
+    return (tt < 0xa0 ? "spill_normal" : tt < 0xc0 ? "spill_other" : tt < 0xe0 ? "fill_normal" : "fill_other");
+  }
+  switch (tt) {
+  case 0x001: return ("power_on_reset");
+  case 0x002: return ("watchdog_reset");
+  case 0x003: return ("externally_initiated_reset");
+  case 0x004: return ("software_initiated_reset");
+  case 0x005: return ("RED_state_exception");
+  case 0x008: return ("instruction_access_exception");
+  case 0x009: return ("instruction_access_MMU_miss");
+  case 0x00a: return ("instruction_access_error");
+  case 0x010: return ("illegal_instruction");
+  case 0x011: return ("privileged_opcode");
+  case 0x012: return ("unimplemented_LDD");
+  case 0x013: return ("unimplemented_STD");
+  case 0x020: return ("fp_disabled");
+  case 0x021: return ("fp_exception_ieee_754");
+  case 0x022: return ("fp_exception_other");
+  case 0x023: return ("tag_overflow");
+  case 0x024: return ("clean_window");
+  case 0x028: return ("division_by_zero");
+  case 0x029: return ("internal_processor_error");
+  case 0x030: return ("data_access_exception");
+  case 0x031: return ("data_access_MMU_miss");
+  case 0x032: return ("data_access_error");
+  case 0x033: return ("data_access_protection");
+  case 0x034: return ("mem_address_not_aligned");
+  case 0x035: return ("LDDF_mem_address_not_aligned");
+  case 0x036: return ("STDF_mem_address_not_aligned");
+  case 0x037: return ("privileged_action");
+  case 0x038: return ("LDQF_mem_address_not_aligned");
+  case 0x039: return ("STQF_mem_address_not_aligned");
+  case 0x040: return ("async_data_error");
+  default: break;
+  }
+  return ("unknown");
+}
+
 /* this triggers sparc32 trap processing on a preinstruction boundary: */
 void
 tme_sparc32_trap_preinstruction(struct tme_sparc *ic, tme_uint32_t trap)
@@ -1382,9 +1480,11 @@ tme_sparc32_trap(struct tme_sparc *ic, tme_uint32_t trap)
   unsigned int cwp;
   unsigned int cwp_offset;
   unsigned int reg_17;
+  tme_uint32_t pc_trap;
 
   /* end any recode verifying: */
   tme_sparc_recode_verify_end(ic, trap);
+  pc_trap = ic->tme_sparc_ireg_uint32(TME_SPARC_IREG_PC);
 
   /* stop idling: */
   TME_SPARC_IDLE_STOP(ic);
@@ -1472,6 +1572,14 @@ tme_sparc32_trap(struct tme_sparc *ic, tme_uint32_t trap)
 		 _("trap tt 0x%03" TME_PRIx32 " handler-%%pc 0x%08" TME_PRIx32),
 		 TME_SPARC_TRAP_TT(trap),
 		 ic->tme_sparc_ireg_uint32(TME_SPARC_IREG_PC_NEXT)));
+
+  /* tell the debugger: */
+  tme_debug_exception(&ic->_tme_sparc_debug,
+		      _tme_sparc_trap_name(ic, TME_SPARC_TRAP_TT(trap)),
+		      TME_SPARC_TRAP_TT(trap),
+		      pc_trap,
+		      ic->tme_sparc_ireg_uint32(TME_SPARC_IREG_PC_NEXT),
+		      FALSE, 0);
 
   /* redispatch: */
   ic->_tme_sparc_mode = TME_SPARC_MODE_EXECUTION;
@@ -1662,9 +1770,11 @@ tme_sparc64_trap(struct tme_sparc *ic, tme_uint32_t trap)
   unsigned int cwp_offset;
   unsigned int wstate;
   tme_uint64_t pc;
+  tme_uint64_t pc_trap;
 
   /* end any recode verifying: */
   tme_sparc_recode_verify_end(ic, trap);
+  pc_trap = ic->tme_sparc_ireg_uint64(TME_SPARC_IREG_PC);
 
   /* stop idling: */
   TME_SPARC_IDLE_STOP(ic);
@@ -1893,6 +2003,14 @@ tme_sparc64_trap(struct tme_sparc *ic, tme_uint32_t trap)
 		 tl,
 		 tt,
 		 pc));
+
+  /* tell the debugger: */
+  tme_debug_exception(&ic->_tme_sparc_debug,
+		      _tme_sparc_trap_name(ic, tt),
+		      tt,
+		      pc_trap,
+		      pc,
+		      FALSE, 0);
 
   /* redispatch: */
   ic->_tme_sparc_mode = TME_SPARC_MODE_EXECUTION;

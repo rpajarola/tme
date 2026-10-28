@@ -1200,11 +1200,11 @@ or dnsmasq (portably). See docs for details...
 
 The control socket lets programs (scripts, test harnesses, AI agents)
 drive tmesh: stop and continue the CPU, single-step it, set
-breakpoints, read and write its registers and memory, read what the
-guest writes to a serial console and type into it, and run any tmesh
-command.  Requests,
-responses and events are lines of JSON.  The protocol is the same as
-that of GXemul's control socket.
+breakpoints, read and write its registers and memory, watch for CPU
+exceptions and for accesses to devices, read what the guest writes to
+a serial console and type into it, and run any tmesh command.
+Requests, responses and events are lines of JSON.  The protocol is
+based on that of GXemul's control socket.
 
 It is enabled with @option{--control}:
 
@@ -1264,7 +1264,8 @@ The @var{argument} is either a JSON object with the request's
 parameters, or a plain value for: @code{raw} (@code{line}),
 @code{step} (@code{n}), @code{break_add} (@code{pc}),
 @code{mem_read} (@code{addr}),
-@code{break_del} (@code{id}), @code{console_read} (@code{since}),
+@code{break_del} (@code{bp}), @code{watch_del} (@code{watch}),
+@code{trace_read} (@code{since}), @code{console_read} (@code{since}),
 @code{console_write} (@code{data}), and @code{run_until} (a console
 pattern).
 
@@ -1288,7 +1289,9 @@ $ tmesh --ctl unix:/tmp/tme.sock raw "command mainbus0 power down"
 
 Each @option{--ctl} is a connection of its own, so events between them
 are seen by no one; @code{status} tells how the machine last stopped,
-and console output is kept until read.
+and console output and the trace are kept until read.  A program that
+wants events as they happen (@code{subscribe}) keeps one connection
+open.
 
 @node Control Protocol
 @subsection Control Protocol
@@ -1297,7 +1300,9 @@ Each message is one line of JSON.  There is one client at a time;
 while one is connected, another gets an error with code @code{busy}.
 
 A request names a command and may carry an @code{id}, which is copied
-to its response.  Each request gets one response, in order:
+to its response.  A parameter that the command doesn't take is an
+error (@code{bad_arg}), which names the parameters it does take.  Each
+request gets one response, in order:
 
 @example
 @{"id": 7, "cmd": "break_add", "pc": "0x0fef5122"@}
@@ -1313,8 +1318,9 @@ Events come unasked, without an @code{id}:
 @end example
 
 The reason for a stop is @code{breakpoint} (with the breakpoint's
-@code{bp}), @code{step}, @code{pause}, or @code{run_until} (with the
-@code{condition} which happened).  Addresses and register values are
+@code{bp}), @code{step}, @code{pause}, @code{watch} (with the
+@code{watch}, and what it saw as @code{hit}), or @code{run_until}
+(with the @code{condition} which happened).  Addresses and register values are
 hexadecimal strings.  An address can also be given as a number, or as
 a register of the CPU, optionally plus or minus a number, such as
 @code{"pc"}, @code{"a7+8"} or @code{"o6-64"}.  @code{ninstrs} is
@@ -1324,8 +1330,9 @@ exactly, but without the instructions in recompiled code.
 
 The error codes are @code{bad_request}, @code{unknown_cmd},
 @code{bad_arg}, @code{not_stopped}, @code{no_such_cpu},
-@code{no_such_console}, @code{no_such_breakpoint}, @code{mem_fault}
-(nothing could be read or written at the address) and @code{busy}.
+@code{no_such_console}, @code{no_such_breakpoint}, @code{no_such_watch},
+@code{no_such_device}, @code{mem_fault} (nothing could be read or
+written at the address) and @code{busy}.
 
 @node Control Commands
 @subsection Control Commands
@@ -1401,7 +1408,7 @@ Adds a breakpoint at @code{pc} for a @code{cpu}, and returns its
 over that breakpoint once.
 
 @item break_del
-Removes the breakpoint @code{id}.
+Removes the breakpoint @code{bp}.
 
 @item break_list
 The @code{breakpoints}.
@@ -1437,11 +1444,99 @@ instruction counts and timeouts are checked every few milliseconds, so
 the machine stops a little after them; @code{pc} is exact.  A stop for
 any other reason ends the @code{run_until}.
 
+@item watch_add
+Adds a watch, and returns its @code{id}.  A watch with @code{kind}
+@code{"exception"} sees the CPU exceptions with the @code{names} (a
+name or a list; names may have @code{*} and @code{?} wildcards, and a
+number is an exception code), or any exception.  A watch with
+@code{kind} @code{"device"} sees the guest's accesses to the registers
+of the @code{device} (named as in @code{devices}), from @code{offset}
+(default 0) for @code{len} bytes (default: all of them), that are
+reads, writes, or both (@code{access} @code{"r"}, @code{"w"} or
+@code{"rw"}, the default).  With @code{action} @code{"stop"} (the
+default), a watch stops the machine when it sees something; with
+@code{"trace"}, it only puts it in the trace.
+
+@item watch_del
+Removes the watch @code{watch}.
+
+@item watch_list
+The @code{watches}, as given to @code{watch_add}, with their
+@code{id}.
+
+@item trace_read
+What watches have seen, from event number @code{since} (default 0)
+on, up to @code{max} (default 1000) events, as @code{events}.
+@code{next} is where to continue, and @code{dropped} tells if events
+were lost (the trace keeps the last 32768).
+
+@item devices
+The @code{devices}: each region of a device on a bus, with the
+device's @code{name}, the @code{bus}, the region's @code{base} address
+on the bus and its @code{length}, and its @code{offset} from the
+device's address, if it isn't 0.  A device watch's offsets count from
+the device's address.
+
+@item subscribe
+Sends events as things happen, until the connection closes: with
+@code{console} @code{true} (or a list of console numbers), what
+consoles write, from then on; with @code{log} @code{true}, the
+messages tmesh logs.  @code{false} stops them.  Returns what is now
+subscribed to.
+
 @item raw
 Runs @code{line} as a tmesh command (such as @code{ls},
 @code{command mainbus0 power up}, or @code{log}), and returns what it
 printed as @code{text}.
 @end table
+
+Trace events look like:
+
+@example
+@{"seq":0, "ninstrs":N, "cpu":0, "watch":1, "pc":"0xffea67d4", "kind":"exception",
+ "name":"interrupt_level_14", "code":30, "vector":"0xffeff1e0"@}
+@{"seq":1, "ninstrs":N, "cpu":0, "watch":2, "pc":"0x0fef4ffa", "kind":"device",
+ "device":"zs0", "offset":"0x6", "access":"w", "len":1, "data":"78"@}
+@end example
+
+An exception has its @code{name} and @code{code} (the m68k's vector
+number, or the SPARC's trap type), the @code{pc} where it happened,
+the address of its handler as @code{vector}, and on the m68k, the
+faulting address of a bus or address error as @code{vaddr}.  m68k
+exceptions are named after their vectors (@code{bus_error},
+@code{illegal_instruction}, @code{trap_0}, @code{interrupt_level_5},
+@code{interrupt_vector} for vectors from 64 on, @dots{}), and SPARC
+traps after their trap types (@code{window_overflow},
+@code{data_access_exception}, @code{trap_instruction},
+@code{interrupt_level_10}, @dots{}).  A stop for an exception happens
+before the handler's first instruction.
+
+A device access has the @code{device}, the @code{offset} into it, the
+@code{access}, its size as @code{len}, the (first 8) bytes read or
+written as @code{data}, in the order the CPU sees them, or the
+@code{error} if the access failed, and the @code{pc} of the
+instruction.  A stop for a device access happens after the
+instruction, or a little later.  Accesses that a device lets the CPU
+make directly, as to memory, aren't seen, nor are the debugger's own,
+or other devices' DMA.  A device that the guest polls (such as a
+serial port's status register) can fill the trace quickly; watch only
+the registers or accesses of interest.
+
+Events of a subscription look like:
+
+@example
+@{"event":"console", "console":0, "start":349, "offset":350, "data":"x"@}
+@{"event":"log", "element":"/clock0", "level":0, "msg":"..."@}
+@{"event":"log_dropped", "count":N@}
+@end example
+
+A @code{console} event has what was written from @code{start} to
+@code{offset}, as @code{console_read} returns it.  A @code{log} event
+has a message logged by an element, at a @code{level}, and any
+@code{error}.  Unless tme was built with logging, only the messages
+that are always logged (level 0) are there.  Events are sent every few
+milliseconds, and before a @code{stopped} event; at most 1000 log
+messages wait to be sent, and more are counted by @code{log_dropped}.
 
 @node GNU Free Documentation License
 @appendix GNU Free Documentation License

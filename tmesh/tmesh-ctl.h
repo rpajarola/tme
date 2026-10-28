@@ -32,6 +32,10 @@
    command runs a tmesh command, returning its output: */
 void tmesh_ctl_start _TME_P((_tme_const char *, int (*) _TME_P((_tme_const char *, char **))));
 
+/* this gives a log message, from an element's log handle, to any
+   client that has subscribed to the log: */
+void tmesh_ctl_log _TME_P((_tme_const char *, unsigned long, int, _tme_const char *));
+
 /* this is tmesh --ctl, a client sending one request: */
 int tmesh_ctl_client _TME_P((int, char **));
 
