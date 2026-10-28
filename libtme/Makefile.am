@@ -30,6 +30,7 @@ libtme_la_SOURCES = misc-host.c \
 	element.c \
 	media.c \
 	control.c \
+	debug.c \
 	log.c \
 	hash.c \
 	token.c \

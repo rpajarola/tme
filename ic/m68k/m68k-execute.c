@@ -103,6 +103,7 @@ do { \
   if (ic->_tme_m68k_instruction_burst_remaining == 0) {
 
     /* start a new burst: */
+    ic->_tme_m68k_insns += ic->_tme_m68k_instruction_burst;
     ic->_tme_m68k_instruction_burst_remaining
       = ic->_tme_m68k_instruction_burst;
 
@@ -165,6 +166,12 @@ do { \
 		    && (ic->tme_m68k_ireg_pc + sizeof(tme_uint16_t) - 1) <= (tme_bus_addr32_t) tlb->tme_m68k_tlb_linear_last)));
     tme_m68k_verify_begin(ic, fetch_fast_next);
 #else  /* !_TME_M68K_EXECUTE_FAST */
+    /* the debugger may stop us before this instruction: */
+    if (__tme_predict_false(ic->_tme_m68k_debug.tme_debug_cpu_slow)
+	&& !_TME_M68K_SEQUENCE_RESTARTING
+	&& tme_debug_cpu_check(&ic->_tme_m68k_debug, ic->tme_m68k_ireg_pc)) {
+      tme_m68k_debug_enter(ic);
+    }
     linear_pc = ic->tme_m68k_ireg_pc;
     ic->_tme_m68k_insn_fetch_slow_next = 0;
     if (!_TME_M68K_SEQUENCE_RESTARTING) {
@@ -876,6 +883,7 @@ do { \
 #endif /* !_TME_M68K_EXECUTE_FAST */
 
     /* start a new burst: */
+    ic->_tme_m68k_insns += ic->_tme_m68k_instruction_burst;
     ic->_tme_m68k_instruction_burst_remaining
       = ic->_tme_m68k_instruction_burst;
 

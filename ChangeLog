@@ -1,3 +1,39 @@
+2026-10-27  Rico Pajarola  <rp@servium.ch>
+
+	* tmesh/tmesh-ctl.c, tmesh/tmesh-ctl.h, tmesh/tmesh.c: Added a
+	control socket: with --control unix:PATH or --control tcp:PORT,
+	tmesh takes requests from programs, as lines of JSON, to pause,
+	continue and single-step the CPU, set breakpoints, read its
+	registers, read and type into a serial console, run until the
+	console prints something, and run any tmesh command.  tmesh --ctl
+	sends one request from a shell.  The protocol is GXemul's.
+
+	* tmesh/cJSON.c, tmesh/cJSON.h: Added cJSON, for the control
+	socket.
+
+	* libtme/debug.c, tme/debug.h: Added the CPUs and consoles that
+	the control socket can use.
+
+	* host/posix-console.c: Added tme/host/posix/console, a serial
+	console for the control socket.
+
+	* ic/m68k/m68k-misc.c, ic/m68k/m68k-execute.c,
+	ic/m68k/m68k-impl.h: The m68k can be stopped for the debugger, in
+	a new mode, between instructions; while breakpoints are set or it
+	is stepping, it runs the slow executor, which checks before each
+	instruction.  It counts the instructions it runs.
+
+	* tmesh/tmesh-cmds.c: Elements' names are given to the debugger,
+	and an input source can be pushed, for the control socket's raw
+	command.
+
+	* libtme/threads-sjlj.c: When a thread waits again on events, the
+	events that its new set took over from its old set are no longer
+	removed from the events that are waited on, which freed their
+	state while it was still used.
+
+	* tme/tme.texi: Documented the control socket.
+
 2026-10-26  Rico Pajarola  <rp@servium.ch>
 
 	* Release 1.2.1.

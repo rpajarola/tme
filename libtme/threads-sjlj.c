@@ -797,6 +797,9 @@ tme_sjlj_yield(void)
 
   if(thread->tme_sjlj_thread_events) {
     for(i=0;i<=thread->tme_sjlj_thread_events->max_event;i++) {
+      /* an event that the new set has taken over isn't removed: */
+      if(thread->tme_sjlj_thread_events->events[i].event == UNDEFINED_EVENT)
+	continue;
       j = (int)thread->tme_sjlj_thread_events->events[i].arg;
       if(tme_sjlj_main_events->events[j].flags &= ~thread->tme_sjlj_thread_events->events[i].flags)
 	event_ctl(tme_sjlj_main_events->es,

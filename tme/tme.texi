@@ -77,6 +77,7 @@ Welcome to The Machine Emulator
 * Running::
 * Graphics::
 * Networking::
+* Control Socket::
 
 Prerequisites
 
@@ -106,6 +107,12 @@ IPv4 Network Address Translation
 * Auto NAT::
 * Manual NAT::
 
+Control Socket
+
+* Control Client::
+* Control Protocol::
+* Control Commands::
+
 @end detailmenu
 @end menu
 
@@ -130,6 +137,7 @@ pleasantries --- on to the nitty-gritty!
 * Running::
 * Graphics::
 * Networking::
+* Control Socket::
 @end menu
 
 @node What is TME?
@@ -1185,6 +1193,219 @@ guests. You can set up a static gateway/nat as described above using
 tap. If you are using IPv6, then you can also set up router
 advertisement to the TAP interface, using radvd (Linux), rtadvd (BSD),
 or dnsmasq (portably). See docs for details...
+
+@node Control Socket
+@section Control Socket
+@cindex control socket
+
+The control socket lets programs (scripts, test harnesses, AI agents)
+drive tmesh: stop and continue the CPU, single-step it, set
+breakpoints, read its registers, read what the guest writes to a
+serial console and type into it, and run any tmesh command.  Requests,
+responses and events are lines of JSON.  The protocol is the same as
+that of GXemul's control socket.
+
+It is enabled with @option{--control}:
+
+@example
+tmesh --control unix:/tmp/tme.sock -c tme.cfg
+@end example
+
+@option{--control tcp:@var{port}} listens on 127.0.0.1 instead; port 0
+picks a free port, which is printed at startup.  There is no
+authentication: anyone who can connect can control the machine, so a
+TCP socket only listens on the loopback address, and a Unix socket is
+protected by the permissions of its directory.
+
+A program can't read a graphical console, so a machine driven this way
+should have its console on a serial port, connected to a
+@code{tme/host/posix/console} element:
+
+@example
+console0 at zs0 channel A: tme/host/posix/console echo
+@end example
+
+This element keeps the last megabyte the guest wrote, for
+@code{console_read} and @code{run_until}, and takes what
+@code{console_write} types.  With @code{echo}, what the guest writes
+also goes to tmesh's standard output.  For the PROM to use the serial
+port, there must be no keyboard and display.
+
+Stopping the machine stops its CPUs; devices and timers keep running,
+as when a hardware debugger halts a CPU, so interrupts that came due
+meanwhile arrive when it continues.  A stop happens between
+instructions: for a pause, at the end of the CPU's current run of a
+few hundred instructions.  While breakpoints are set or the CPU is
+stepping, the CPU checks before every instruction, which is slower;
+otherwise it runs at its normal speed.
+
+So far, only m68k CPUs can be stopped and inspected.
+
+@menu
+* Control Client::
+* Control Protocol::
+* Control Commands::
+@end menu
+
+@node Control Client
+@subsection Control Client
+
+@command{tmesh --ctl} sends one request and prints the response, so
+that each step is one shell command:
+
+@example
+tmesh --ctl @var{socket} [--wait] [--timeout @var{seconds}] @var{command} [@var{argument}]
+@end example
+
+The @var{argument} is either a JSON object with the request's
+parameters, or a plain value for: @code{raw} (@code{line}),
+@code{step} (@code{n}), @code{break_add} (@code{pc}),
+@code{break_del} (@code{id}), @code{console_read} (@code{since}),
+@code{console_write} (@code{data}), and @code{run_until} (a console
+pattern).
+
+The response is printed as one line of JSON.  With @option{--wait},
+after a successful @code{continue}, @code{step}, @code{run_until} or
+@code{pause}, the client also waits for the machine to stop (or exit),
+and prints that event too.  The exit status is 0 for success, 1 if
+tmesh replied with an error, 2 if the socket could not be used, and 3
+if @option{--timeout} expired while waiting (which leaves the machine
+running).
+
+@example
+$ tmesh --control unix:/tmp/tme.sock -c tme.cfg &
+$ tmesh --ctl unix:/tmp/tme.sock --wait run_until '>'
+@{"id":1,"ok":true,"result":@{"console_offset":0,"already_running":true@},"ninstrs":59530600@}
+@{"event":"stopped","reason":"run_until","cpu":0,"pc":"0x0fef5122","condition":"console","match":">","console_offset":349,"ninstrs":81713400@}
+$ tmesh --ctl unix:/tmp/tme.sock regs '@{"names":["pc","sr","a7"]@}'
+$ tmesh --ctl unix:/tmp/tme.sock --wait run_until '@{"console":@{"pattern":">","input":"b sd()\r"@}@}'
+$ tmesh --ctl unix:/tmp/tme.sock raw "command mainbus0 power down"
+@end example
+
+Each @option{--ctl} is a connection of its own, so events between them
+are seen by no one; @code{status} tells how the machine last stopped,
+and console output is kept until read.
+
+@node Control Protocol
+@subsection Control Protocol
+
+Each message is one line of JSON.  There is one client at a time;
+while one is connected, another gets an error with code @code{busy}.
+
+A request names a command and may carry an @code{id}, which is copied
+to its response.  Each request gets one response, in order:
+
+@example
+@{"id": 7, "cmd": "break_add", "pc": "0x0fef5122"@}
+@{"id": 7, "ok": true, "result": @{"id": 3, "cpu": 0, "addr": "0x0fef5122"@}, "ninstrs": 1203@}
+@{"id": 7, "ok": false, "error": @{"code": "bad_arg", "message": "..."@}, "ninstrs": 1203@}
+@end example
+
+Events come unasked, without an @code{id}:
+
+@example
+@{"event":"stopped", "reason":"breakpoint", "bp":3, "cpu":0, "pc":"0x0fef5122", "ninstrs":N@}
+@{"event":"exited", "ninstrs":N@}
+@end example
+
+The reason for a stop is @code{breakpoint} (with the breakpoint's
+@code{bp}), @code{step}, @code{pause}, or @code{run_until} (with the
+@code{condition} which happened).  Addresses and register values are
+hexadecimal strings, and an address can also be given as a number.
+@code{ninstrs} is about how many instructions the first CPU has run,
+counted per run of instructions except while stepping.
+
+The error codes are @code{bad_request}, @code{unknown_cmd},
+@code{bad_arg}, @code{not_stopped}, @code{no_such_cpu},
+@code{no_such_console}, @code{no_such_breakpoint} and @code{busy}.
+
+@node Control Commands
+@subsection Control Commands
+
+CPUs and consoles are numbered from 0, in the order the configuration
+makes them; @code{cpu} and @code{console} parameters default to 0.
+
+@table @code
+@item hello
+The protocol version (1), tmesh's @code{version}, the @code{state}
+(@code{running} or @code{stopped}), the @code{cpus} (with their tmesh
+@code{name}, @code{arch}, @code{model}, @code{bits} and
+@code{endian}), and the @code{consoles} (with their @code{name}).
+
+@item status
+The @code{state}, how the machine last @code{stop}ped, and each CPU's
+@code{pc}, and whether it is @code{stopped}.
+
+@item pause
+Stops the machine; a @code{stopped} event follows, unless the result
+says @code{already_stopped}.
+
+@item continue
+Continues the machine.
+
+@item step
+Runs @code{n} (default 1) instructions of a stopped @code{cpu}; a
+@code{stopped} event follows.
+
+@item quit
+Exits tmesh, after an @code{exited} event.
+
+@item regs
+The registers of a @code{cpu}, all of them or the list of
+@code{names}: on m68k, @code{d0}-@code{d7}, @code{a0}-@code{a7},
+@code{pc}, @code{sr}, @code{usp}, @code{isp}, and as the model has
+them, @code{sfc}, @code{dfc}, @code{vbr}, @code{msp}, @code{cacr} and
+@code{caar}.  @code{a7} is the stack pointer in use, which is also
+shown as the one of @code{usp}, @code{isp} or @code{msp} that the
+status register selects.
+
+@item break_add
+Adds a breakpoint at @code{pc} for a @code{cpu}, and returns its
+@code{id}.  When the machine continues from a breakpoint, it passes
+over that breakpoint once.
+
+@item break_del
+Removes the breakpoint @code{id}.
+
+@item break_list
+The @code{breakpoints}.
+
+@item console_read
+What a @code{console} has written from byte offset @code{since}
+(default 0) on, up to @code{max} (default 65536) bytes, as
+@code{data}.  @code{start} is the offset of the first byte returned
+(later than @code{since} if those bytes are no longer kept, which
+@code{dropped} tells), and @code{offset} is where to continue.  With
+@code{encoding} @code{"hex"}, the bytes are given in hexadecimal;
+otherwise bytes 0x80-0xff come back as the characters U+0080-U+00FF,
+and NUL bytes are left out.
+
+@item console_write
+Types @code{data} into a @code{console} (with @code{encoding}
+@code{"hex"}, given in hexadecimal), and returns how many bytes were
+@code{written}; fewer are taken if the console's input buffer is full.
+
+@item run_until
+Continues the machine until the first of these happens, and then
+stops with reason @code{run_until} and the @code{condition}:
+@code{console}, with @code{@{"pattern": ..., "console": ..., "since":
+..., "input": ...@}}, when the console prints a pattern (a string, or a
+list of strings; plain text, not regular expressions), with the
+@code{match} and the @code{console_offset} after it; @code{pc}, when
+@code{cpu} reaches an address; @code{insns}, when this many more
+instructions have run; @code{timeout_ms}, when this many milliseconds
+have passed.  The console search starts at what is printed from then
+on, or at offset @code{since}, and @code{input} is typed after the
+search starts, so that its reply can't be missed.  Console patterns,
+instruction counts and timeouts are checked every few milliseconds, so
+the machine stops a little after them; @code{pc} is exact.  A stop for
+any other reason ends the @code{run_until}.
+
+@item raw
+Runs @code{line} as a tmesh command (such as @code{ls},
+@code{command mainbus0 power up}, or @code{log}), and returns what it
+printed as @code{text}.
+@end table
 
 @node GNU Free Documentation License
 @appendix GNU Free Documentation License

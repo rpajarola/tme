@@ -40,6 +40,7 @@ _TME_RCSID("$Id: tmesh.c,v 1.4 2009/08/30 17:06:38 fredette Exp $");
 #include <tme/tme.h>
 #include <tme/tmesh.h>
 #include <tme/hash.h>
+#include "tmesh-ctl.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -588,6 +589,69 @@ int _tmesh_eval() {
   }
 }
 
+/* this runs a tmesh command for the control socket, as if it were
+   sourced from a file, and returns what it printed: */
+static int
+_tmesh_ctl_command(const char *line, char **_text)
+{
+  struct tmesh_io io;
+  struct tmesh_io *io_saved;
+  struct _tmesh_input *input;
+  unsigned int depth;
+  unsigned int len;
+  int rc;
+  int yield;
+  int passes;
+  char *output;
+
+  /* the command, as an input that is at its end: */
+  len = strlen(line);
+  if (len + 1 >= sizeof(input->_tmesh_input_buffer)) {
+    return (E2BIG);
+  }
+  input = tme_new0(struct _tmesh_input, 1);
+  memcpy(input->_tmesh_input_buffer, line, len);
+  input->_tmesh_input_buffer[len] = '\n';
+  input->_tmesh_input_buffer_head = len + 1;
+  input->_tmesh_input_buffer_eof = TRUE;
+  input->_tmesh_input_handle = TME_INVALID_HANDLE;
+  io.tmesh_io_name = "*control*";
+  io.tmesh_io_private = input;
+  io.tmesh_io_input_line = 0;
+  io.tmesh_io_getc = _tmesh_getc;
+  io.tmesh_io_close = _tmesh_close;
+  io.tmesh_io_open = _tmesh_open;
+
+  /* push it, and run commands until it (and anything it sources) has
+     been read: */
+  io_saved = _tmesh_io;
+  depth = tmesh_io_depth(_tmesh);
+  tmesh_io_push(_tmesh, &io);
+  *_text = NULL;
+  for (passes = 0; tmesh_io_depth(_tmesh) > depth && passes < 1000; passes++) {
+    rc = tmesh_eval(_tmesh, &output, &yield);
+    if (yield) {
+      break;
+    }
+    if (rc == TME_OK) {
+      if (output != NULL && *output != '\0') {
+	tme_output_append(_text, "%s\n", output);
+      }
+    }
+    else {
+      if (output != NULL && *output != '\0') {
+	tme_output_append(_text, "%s: ", output);
+      }
+      tme_output_append(_text, "%s\n", strerror(rc));
+    }
+    if (output != NULL) {
+      tme_free(output);
+    }
+  }
+  _tmesh_io = io_saved;
+  return (TME_OK);
+}
+
 /* our thread: */
 static _tme_thret
 _tmesh_th(int *interactive)
@@ -760,7 +824,9 @@ do_usage(const char *prog_name, char *msg)
   fprintf(stderr, "usage: %s [OPTIONS] <INITIAL-CONFIG> \
                    \nwhere OPTIONS are:			   \
                    \n--log LOGFILE          log to LOGFILE		\
-                   \n-c, --noninteractive   read no commands from standard input (<INITIAL-CONFIG> required here)\n", prog_name);
+                   \n-c, --noninteractive   read no commands from standard input (<INITIAL-CONFIG> required here)\
+                   \n--control unix:PATH|tcp:PORT  listen for requests from programs; send them with\
+                   \n                       %s --ctl unix:PATH|tcp:PORT COMMAND [ARGUMENT]\n", prog_name, prog_name);
 #ifdef TMESH_WINDOW
   fprintf(stderr,
 	  "--edit [SCRIPT]        open the machine window (on SCRIPT's machine, or a new one there)\n"
@@ -845,6 +911,7 @@ main(int argc, char **argv)
   int arg_i;
   const char **initial_config_filename;
   const char *log_filename;
+  const char *control_spec;
   int interactive;
   struct tmesh_io io;
   struct tmesh_support support;
@@ -879,6 +946,7 @@ main(int argc, char **argv)
   usage = FALSE;
   initial_config_filename = NULL;
   log_filename = "/dev/null";
+  control_spec = NULL;
   interactive = TRUE;
   edit = FALSE;
   edit_running = FALSE;
@@ -887,6 +955,11 @@ main(int argc, char **argv)
   window_script = NULL;
   argv0_full = argv[0];
   if ((argv0 = strrchr(argv[0], '/')) == NULL) argv0 = argv[0]; else argv0++;
+
+  /* tmesh --ctl ...: a control socket client: */
+  if (argc >= 2 && !strcmp(argv[1], "--ctl")) {
+    return (tmesh_ctl_client(argc, argv));
+  }
   for (arg_i = 1;
        (arg_i < argc
 	&& *argv[arg_i] == '-');
@@ -954,6 +1027,15 @@ main(int argc, char **argv)
     }
 #endif // HAVE_PTHREAD_SETSCHEDPARAM  
 #endif // TME_THREADS_POSIX
+    else if (!strcmp(opt, "--control")) {
+      if (++arg_i < argc) {
+	control_spec = argv[arg_i];
+      }
+      else {
+	usage = TRUE;
+	break;
+      }
+    }
     else if (!strcmp(opt, "-c")
 	     || !strcmp(opt, "--noninteractive")) {
       interactive = FALSE;
@@ -1218,6 +1300,11 @@ main(int argc, char **argv)
     
   /* remove all consumed characters: */
   _tmesh_remove_consumed(input_stdin);
+
+  /* start the control socket: */
+  if (control_spec != NULL) {
+    tmesh_ctl_start(control_spec, _tmesh_ctl_command);
+  }
 
   /* create our eval loop thread for interactive mode: */
   tme_thread_create(&tmesh_thread, (tme_thread_t) _tmesh_th, &interactive);

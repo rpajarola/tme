@@ -92,6 +92,8 @@ struct tmesh_support {
 /* prototypes: */
 void *tmesh_new _TME_P((_tme_const struct tmesh_support *, _tme_const struct tmesh_io *));
 int tmesh_eval _TME_P((void *, char **, int *));
+void tmesh_io_push _TME_P((void *, _tme_const struct tmesh_io *));
+unsigned int tmesh_io_depth _TME_P((void *));
 void tme_init _TME_P((void));
 
 #endif /* !_TME_TMESH_H */

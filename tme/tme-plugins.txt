@@ -52,6 +52,7 @@ tme_host_udp_eth tme_host_udp eth
 tme_host_posix_disk tme_host_posix disk
 tme_host_posix_memory tme_host_posix memory
 tme_host_posix_serial tme_host_posix serial
+tme_host_posix_console tme_host_posix console
 tme_host_posix_tape tme_host_posix tape
 tme_bus_multibus_3c400 tme_bus_multibus 3c400
 tme_bus_multibus_sun_mie tme_bus_multibus sun_mie

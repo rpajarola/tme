@@ -40,6 +40,7 @@ _TME_RCSID("$Id: tmesh-cmds.c,v 1.6 2006/11/15 23:12:30 fredette Exp $");
 #include <tme/threads.h>
 #include <tme/media.h>
 #include <tme/control.h>
+#include <tme/debug.h>
 #include <stdlib.h>
 #include "tmesh-impl.h"
 
@@ -614,6 +615,8 @@ _tmesh_command_connect(struct tmesh *tmesh, struct tmesh_parser_value *value, ch
 		   (pathname[0] == '/' ? pathname + 1 : pathname));
     tme_controls_name(&element0->tmesh_fs_element_element,
 		      (pathname[0] == '/' ? pathname + 1 : pathname));
+    tme_debug_name(&element0->tmesh_fs_element_element,
+		   (pathname[0] == '/' ? pathname + 1 : pathname));
     tme_free(pathname);
 
     /* the creation succeeded.  set the generation number and preserve
@@ -918,6 +921,37 @@ tmesh_eval(void *_tmesh, char **_output, int *_yield)
 
   /* done: */
   return (rc);
+}
+
+/* this pushes an input source, as the source command does: */
+void
+tmesh_io_push(void *_tmesh, const struct tmesh_io *io)
+{
+  struct tmesh *tmesh;
+  struct tmesh_io_stack *stack_new;
+
+  tmesh = (struct tmesh *) _tmesh;
+  stack_new = tme_new(struct tmesh_io_stack, 1);
+  stack_new->tmesh_io_stack_io = *io;
+  stack_new->tmesh_io_stack_io.tmesh_io_name = tme_strdup(io->tmesh_io_name);
+  stack_new->tmesh_io_stack_next = tmesh->tmesh_io_stack;
+  tmesh->tmesh_io_stack = stack_new;
+}
+
+/* this returns how many input sources are on the stack: */
+unsigned int
+tmesh_io_depth(void *_tmesh)
+{
+  struct tmesh_io_stack *stack;
+  unsigned int depth;
+
+  depth = 0;
+  for (stack = ((struct tmesh *) _tmesh)->tmesh_io_stack;
+       stack != NULL;
+       stack = stack->tmesh_io_stack_next) {
+    depth++;
+  }
+  return (depth);
 }
 
 /* this creates a new shell: */

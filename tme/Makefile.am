@@ -11,6 +11,7 @@ pkginclude_HEADERS = memory.h \
 	element.h \
 	media.h \
 	control.h \
+	debug.h \
 	event.h \
 	threads.h \
 	threads-posix.h \

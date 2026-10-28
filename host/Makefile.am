@@ -9,7 +9,8 @@ pkglib_LTLIBRARIES = tme_host_posix.la
 tme_host_posix_la_SOURCES = posix-memory.c \
 	posix-disk.c \
 	posix-tape.c \
-	posix-serial.c
+	posix-serial.c \
+	posix-console.c
 
 tme_host_posix_la_LDFLAGS = -module -version-info 0:0:0
 tme_host_posix_la_LIBADD = $(top_builddir)/generic/libtme-generic.la

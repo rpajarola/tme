@@ -11,7 +11,11 @@ libtmesh_la_SOURCES = \
 	tmesh-input.y \
 	tmesh-util.c \
 	tmesh-cmds.c \
-	tmesh-threads.c
+	tmesh-threads.c \
+	tmesh-ctl.h \
+	tmesh-ctl.c \
+	cJSON.h \
+	cJSON.c
 libtmesh_la_LIBADD = $(top_builddir)/libtme/libtme.la
 
 bin_PROGRAMS = tmesh

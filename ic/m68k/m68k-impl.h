@@ -43,6 +43,7 @@ _TME_RCSID("$Id: m68k-impl.h,v 1.19 2009/08/29 19:28:08 fredette Exp $");
 #include <tme/ic/m68k.h>
 #include <tme/ic/ieee754.h>
 #include <tme/generic/ic.h>
+#include <tme/debug.h>
 #include <setjmp.h>
 
 /* macros: */
@@ -249,6 +250,7 @@ _TME_RCSID("$Id: m68k-impl.h,v 1.19 2009/08/29 19:28:08 fredette Exp $");
 #define TME_M68K_MODE_RTE	(2)
 #define TME_M68K_MODE_STOP	(3)
 #define TME_M68K_MODE_HALT	(4)
+#define TME_M68K_MODE_DEBUG	(5)
 
 /* mode-specific flags: */
 #define TME_M68K_EXECUTION_INST_CANFAULT	TME_BIT(0)
@@ -459,6 +461,15 @@ struct tme_m68k {
   unsigned int _tme_m68k_instruction_burst;
   unsigned int _tme_m68k_instruction_burst_remaining;
 
+  /* the instructions in the bursts done so far: */
+  tme_uint64_t _tme_m68k_insns;
+
+  /* the debugger's view of this CPU, the mode to go back to when a
+     debugger stop ends, and whether this stop has been told about: */
+  struct tme_debug_cpu _tme_m68k_debug;
+  int _tme_m68k_debug_mode;
+  int _tme_m68k_debug_announced;
+
   /* the effective address: */
 #define _tme_m68k_ea_address tme_m68k_ireg_ea
   unsigned int _tme_m68k_ea_function_code;
@@ -585,6 +596,7 @@ extern const tme_uint8_t _tme_m6888x_fpgen_opmode_bitmap[128 / 8];
 int tme_m68k_new _TME_P((struct tme_m68k *, const char * const *, const void *, char **));
 void tme_m68k_redispatch _TME_P((struct tme_m68k *));
 int tme_m68k_go_slow _TME_P((const struct tme_m68k *));
+void tme_m68k_debug_enter _TME_P((struct tme_m68k *));
 void tme_m68k_change_sr _TME_P((struct tme_m68k *, tme_uint16_t));
 void tme_m68k_external_check _TME_P((struct tme_m68k *, tme_uint32_t));
 void tme_m68k_tlb_fill _TME_P((struct tme_m68k *, struct tme_m68k_tlb *, unsigned int, tme_uint32_t, unsigned int));

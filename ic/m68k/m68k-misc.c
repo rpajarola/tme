@@ -184,6 +184,17 @@ tme_m68k_external_check(struct tme_m68k *ic, tme_uint32_t internal_exceptions)
   int vector;
   int rc;
 
+  /* if the debugger wants this CPU to stop, stop between
+     instructions, or while stopped or halted: */
+  if (ic->_tme_m68k_debug.tme_debug_cpu_stop_requested
+      && (ic->_tme_m68k_mode == TME_M68K_MODE_EXECUTION
+	  || ic->_tme_m68k_mode == TME_M68K_MODE_STOP
+	  || ic->_tme_m68k_mode == TME_M68K_MODE_HALT)) {
+    tme_mutex_unlock(&ic->tme_m68k_external_mutex);
+    (void) tme_debug_cpu_check(&ic->_tme_m68k_debug, ic->tme_m68k_ireg_pc);
+    tme_m68k_debug_enter(ic);
+  }
+
   /* if an external reset has been requested, start reset exception
      processing: */
   if (ic->tme_m68k_external_reset) {
@@ -269,6 +280,172 @@ tme_m68k_idle(struct tme_m68k *ic)
   }
 }
 
+/* this stops the CPU for the debugger, before the instruction at the
+   PC.  it doesn't return: */
+void
+tme_m68k_debug_enter(struct tme_m68k *ic)
+{
+  ic->_tme_m68k_debug_mode = ic->_tme_m68k_mode;
+  ic->_tme_m68k_debug_announced = FALSE;
+  ic->_tme_m68k_mode = TME_M68K_MODE_DEBUG;
+  TME_M68K_SEQUENCE_START;
+  tme_m68k_redispatch(ic);
+}
+
+/* the debug function, used while the debugger has the processor
+   stopped: */
+static void
+tme_m68k_debug_stopped(struct tme_m68k *ic)
+{
+  /* lock the external mutex: */
+  tme_mutex_lock(&ic->tme_m68k_external_mutex);
+
+  /* loop forever: */
+  for (;;) {
+
+    /* tell the debugger, once: */
+    if (!ic->_tme_m68k_debug_announced) {
+      ic->_tme_m68k_debug_announced = TRUE;
+      tme_debug_cpu_stopped(&ic->_tme_m68k_debug);
+    }
+
+    /* if the debugger lets us go, go back to what we were doing: */
+    if (tme_debug_cpu_resuming(&ic->_tme_m68k_debug)) {
+      tme_mutex_unlock(&ic->tme_m68k_external_mutex);
+      ic->_tme_m68k_mode = ic->_tme_m68k_debug_mode;
+      TME_M68K_SEQUENCE_START;
+      tme_m68k_redispatch(ic);
+    }
+
+    /* await the debugger: */
+    tme_cond_wait_yield(&ic->tme_m68k_external_cond, &ic->tme_m68k_external_mutex);
+  }
+}
+
+/* the debugger's functions: */
+static void
+_tme_m68k_debug_wakeup(struct tme_debug_cpu *debug)
+{
+  struct tme_m68k *ic;
+
+  ic = debug->tme_debug_cpu_private;
+  tme_mutex_lock(&ic->tme_m68k_external_mutex);
+  tme_cond_notify(&ic->tme_m68k_external_cond, TRUE);
+  tme_mutex_unlock(&ic->tme_m68k_external_mutex);
+}
+
+static tme_uint64_t
+_tme_m68k_debug_pc(struct tme_debug_cpu *debug)
+{
+  struct tme_m68k *ic;
+
+  ic = debug->tme_debug_cpu_private;
+  return (ic->tme_m68k_ireg_pc);
+}
+
+static tme_uint64_t
+_tme_m68k_debug_insns(struct tme_debug_cpu *debug)
+{
+  struct tme_m68k *ic;
+
+  ic = debug->tme_debug_cpu_private;
+  return (ic->_tme_m68k_insns
+	  + (ic->_tme_m68k_instruction_burst
+	     - ic->_tme_m68k_instruction_burst_remaining));
+}
+
+/* the registers that every m68k has, then those of the m68010, then
+   those of the m68020: */
+static const char * const _tme_m68k_debug_regs[] = {
+  "d0", "d1", "d2", "d3", "d4", "d5", "d6", "d7",
+  "a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7",
+  "pc", "sr", "usp", "isp",
+  "sfc", "dfc", "vbr",
+  "msp", "cacr", "caar",
+  NULL
+};
+#define _TME_M68K_DEBUG_REGS_M68000	(20)
+#define _TME_M68K_DEBUG_REGS_M68010	(23)
+#define _TME_M68K_DEBUG_REGS_M68020	(26)
+
+/* this returns a pointer to a stack pointer register.  the one in use
+   is a7, and the others are kept in usp, isp and msp: */
+static tme_uint32_t *
+_tme_m68k_debug_sp(struct tme_m68k *ic, const char *name)
+{
+  const char *active;
+
+  active = (!(ic->tme_m68k_ireg_sr & TME_M68K_FLAG_S)
+	    ? "usp"
+	    : (ic->tme_m68k_ireg_sr & TME_M68K_FLAG_M)
+	    ? "msp"
+	    : "isp");
+  if (!strcmp(name, active)) {
+    return (&ic->tme_m68k_ireg_a7);
+  }
+  return (!strcmp(name, "usp")
+	  ? &ic->tme_m68k_ireg_usp
+	  : !strcmp(name, "isp")
+	  ? &ic->tme_m68k_ireg_isp
+	  : &ic->tme_m68k_ireg_msp);
+}
+
+static int
+_tme_m68k_debug_reg(struct tme_debug_cpu *debug, unsigned int reg_i, struct tme_debug_reg *reg)
+{
+  struct tme_m68k *ic;
+  unsigned int count;
+  const char *name;
+  tme_uint32_t value;
+
+  ic = debug->tme_debug_cpu_private;
+  count = (ic->tme_m68k_type >= TME_M68K_M68020
+	   ? _TME_M68K_DEBUG_REGS_M68020
+	   : ic->tme_m68k_type >= TME_M68K_M68010
+	   ? _TME_M68K_DEBUG_REGS_M68010
+	   : _TME_M68K_DEBUG_REGS_M68000);
+  if (reg_i >= count) {
+    return (FALSE);
+  }
+  name = _tme_m68k_debug_regs[reg_i];
+  reg->tme_debug_reg_name = name;
+  reg->tme_debug_reg_bits = 32;
+  if (reg_i < 16) {
+    value = ic->tme_m68k_ireg_uint32(TME_M68K_IREG_D0 + reg_i);
+  }
+  else if (!strcmp(name, "pc")) {
+    value = ic->tme_m68k_ireg_pc;
+  }
+  else if (!strcmp(name, "sr")) {
+    value = ic->tme_m68k_ireg_sr;
+    reg->tme_debug_reg_bits = 16;
+  }
+  else if (!strcmp(name, "usp")
+	   || !strcmp(name, "isp")
+	   || !strcmp(name, "msp")) {
+    value = *_tme_m68k_debug_sp(ic, name);
+  }
+  else if (!strcmp(name, "sfc")) {
+    value = ic->tme_m68k_ireg_sfc;
+    reg->tme_debug_reg_bits = 8;
+  }
+  else if (!strcmp(name, "dfc")) {
+    value = ic->tme_m68k_ireg_dfc;
+    reg->tme_debug_reg_bits = 8;
+  }
+  else if (!strcmp(name, "vbr")) {
+    value = ic->tme_m68k_ireg_vbr;
+  }
+  else if (!strcmp(name, "cacr")) {
+    value = ic->tme_m68k_ireg_cacr;
+  }
+  else {
+    value = ic->tme_m68k_ireg_caar;
+  }
+  reg->tme_debug_reg_value = value;
+  return (TRUE);
+}
+
 /* the m68k thread: */
 static _tme_thret
 _tme_m68k_th(struct tme_m68k *ic)
@@ -305,6 +482,10 @@ _tme_m68k_th(struct tme_m68k *ic)
   case TME_M68K_MODE_STOP:
   case TME_M68K_MODE_HALT:
     tme_m68k_idle(ic);
+    /* NOTREACHED */
+
+  case TME_M68K_MODE_DEBUG:
+    tme_m68k_debug_stopped(ic);
     /* NOTREACHED */
 
   default:
@@ -622,6 +803,24 @@ tme_m68k_new(struct tme_m68k *ic, const char * const *args, const void *extra, c
   ic->_tme_m68k_mode = TME_M68K_MODE_HALT;
   TME_M68K_SEQUENCE_START;
 
+  /* register for the debugger: */
+  ic->_tme_m68k_debug.tme_debug_cpu_element = element;
+  ic->_tme_m68k_debug.tme_debug_cpu_arch = "m68k";
+  ic->_tme_m68k_debug.tme_debug_cpu_model
+    = (ic->tme_m68k_type == TME_M68K_M68000
+       ? "m68000"
+       : ic->tme_m68k_type == TME_M68K_M68010
+       ? "m68010"
+       : "m68020");
+  ic->_tme_m68k_debug.tme_debug_cpu_bits = 32;
+  ic->_tme_m68k_debug.tme_debug_cpu_big_endian = TRUE;
+  ic->_tme_m68k_debug.tme_debug_cpu_private = ic;
+  ic->_tme_m68k_debug.tme_debug_cpu_wakeup = _tme_m68k_debug_wakeup;
+  ic->_tme_m68k_debug.tme_debug_cpu_reg = _tme_m68k_debug_reg;
+  ic->_tme_m68k_debug.tme_debug_cpu_pc = _tme_m68k_debug_pc;
+  ic->_tme_m68k_debug.tme_debug_cpu_insns = _tme_m68k_debug_insns;
+  tme_debug_cpu_register(&ic->_tme_m68k_debug);
+
   /* start the m68k thread: */
   tme_thread_create(&ic->tme_m68k_thread, (tme_thread_t) _tme_m68k_th, ic);
 
@@ -683,9 +882,12 @@ tme_m68k_go_slow(const struct tme_m68k *ic)
   }
   linear_pc = ic->tme_m68k_ireg_pc;
   return (
+
+	  /* the debugger must not need to check every instruction: */
+	  ic->_tme_m68k_debug.tme_debug_cpu_slow
 	  
 	  /* the ITLB entry must support reads from emulator memory: */
-	  tme_m68k_tlb_is_invalid(tlb)
+	  || tme_m68k_tlb_is_invalid(tlb)
 	  || tlb->tme_m68k_tlb_bus_context != bus_context
 	  || (tlb->tme_m68k_tlb_function_codes_mask
 	      & TME_BIT(TME_M68K_FUNCTION_CODE_PROGRAM(ic))) == 0
