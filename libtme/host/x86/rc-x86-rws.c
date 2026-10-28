@@ -850,6 +850,16 @@ tme_recode_host_rw_thunk_new(struct tme_recode_ic *ic,
     _tme_recode_x86_emit_reg_push(thunk_bytes, TME_RECODE_X86_REG_N(8));
     _tme_recode_x86_emit_reg_push(thunk_bytes, TME_RECODE_X86_REG_N(9));
 
+    /* the x86-64 ABI requires that the stack pointer be 16-byte
+       aligned immediately before a call instruction.  at the
+       beginning of a read/write thunk it is only 8-byte aligned
+       (because of the return address for the read/write thunk), and
+       we pushed an even number of registers above, so pad the stack
+       with one extra word to get it aligned: */
+    thunk_bytes
+      = _tme_recode_x86_emit_adjust_sp(thunk_bytes,
+				       (0 - TME_BIT(TME_RECODE_SIZE_HOST - TME_RECODE_SIZE_8)));
+
     /* make the struct tme_ic * argument for the guest function: */
     _tme_recode_x86_emit_reg_copy(thunk_bytes, TME_RECODE_X86_REG_IC, TME_RECODE_X86_REG_DI);
 
@@ -902,6 +912,11 @@ tme_recode_host_rw_thunk_new(struct tme_recode_ic *ic,
 					TME_RECODE_X86_OPCODE_GRP5_CALL)
 	    << 8));
     thunk_bytes += 2;
+
+    /* remove the stack padding: */
+    thunk_bytes
+      = _tme_recode_x86_emit_adjust_sp(thunk_bytes,
+				       TME_BIT(TME_RECODE_SIZE_HOST - TME_RECODE_SIZE_8));
 
     /* pop the caller-saved registers that aren't normally destroyed
        by a read/write thunk: */

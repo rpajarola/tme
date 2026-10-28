@@ -1,5 +1,11 @@
 2026-10-28  Rico Pajarola  <rp@servium.ch>
 
+	* libtme/host/x86/rc-x86-rws.c (tme_recode_host_rw_thunk_new):
+	On x86-64, a read/write thunk's call to its guest function didn't
+	leave the stack pointer 16-byte aligned, as the ABI requires, and
+	code compiled to rely on that (a movaps to the stack) crashed.
+	Pad the stack around the call.
+
 	* tmesh/tmesh-ctl.c: Added the control socket's reg_set, mem_read
 	and mem_write commands.  Addresses can be given as a register
 	plus or minus a number.
