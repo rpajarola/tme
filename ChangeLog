@@ -1,3 +1,25 @@
+2026-10-28  Rico Pajarola  <rp@servium.ch>
+
+	* tmesh/tmesh-ctl.c: Added the control socket's reg_set, mem_read
+	and mem_write commands.  Addresses can be given as a register
+	plus or minus a number.
+
+	* ic/m68k/m68k-misc.c: The m68k's registers can be set, and its
+	memory read and written, for the control socket, through the TLB
+	entry a data access would use, and only where that is memory.
+
+	* ic/sparc/sparc-misc.c, ic/sparc/sparc-execute.c,
+	ic/sparc/sparc-impl.h, ic/sparc/stp103x.c: The SPARC can be
+	stopped for the debugger, like the m68k: between instructions,
+	but never before an annulled one, and checking before each
+	instruction, without recompiled code, while breakpoints are set or
+	it is stepping.  Its registers can be read and set, and sparc32
+	memory read and written.  It counts the instructions it
+	interprets.
+
+	* tme/tme.texi: Documented the new control socket commands, and
+	the SPARC.
+
 2026-10-27  Rico Pajarola  <rp@servium.ch>
 
 	* tmesh/tmesh-ctl.c, tmesh/tmesh-ctl.h, tmesh/tmesh.c: Added a

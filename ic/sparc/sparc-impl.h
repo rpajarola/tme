@@ -49,6 +49,7 @@ _TME_RCSID("$Id: sparc-impl.h,v 1.11 2010/06/05 16:13:15 fredette Exp $");
 #endif /* TME_HAVE_RECODE */
 #include <tme/runlength.h>
 #include <tme/misc.h>
+#include <tme/debug.h>
 #include <setjmp.h>
 
 /* macros: */
@@ -332,6 +333,7 @@ _TME_RCSID("$Id: sparc-impl.h,v 1.11 2010/06/05 16:13:15 fredette Exp $");
 #define TME_SPARC_MODE_HALT		(2)
 #define TME_SPARC_MODE_OFF		(3)
 #define TME_SPARC_MODE_TIMING_LOOP	(4)
+#define TME_SPARC_MODE_DEBUG		(5)
 
 /* the maximum number of windows: */
 #define TME_SPARC_WINDOWS_MAX		(16)
@@ -873,6 +875,15 @@ struct tme_sparc {
   tme_uint32_t _tme_sparc_instruction_burst_remaining;
   unsigned int _tme_sparc_instruction_burst_other;
 
+  /* the instructions run so far, not counting recoded ones: */
+  tme_uint64_t _tme_sparc_debug_insns;
+
+  /* the debugger's view of this CPU, the mode to go back to when a
+     debugger stop ends, and whether this stop has been told about: */
+  struct tme_debug_cpu _tme_sparc_debug;
+  int _tme_sparc_debug_mode;
+  int _tme_sparc_debug_announced;
+
   /* the token for any currently busy instruction TLB entry: */
   struct tme_token *_tme_sparc_itlb_current_token;
 
@@ -1145,6 +1156,8 @@ extern const tme_uint8_t _tme_sparc_conds_fcc[4];
 void tme_sparc_sync_init _TME_P((struct tme_sparc *));
 int tme_sparc_new _TME_P((struct tme_sparc *, const char * const *, const void *, char **));
 void tme_sparc_redispatch _TME_P((struct tme_sparc *));
+void tme_sparc_debug_enter _TME_P((struct tme_sparc *));
+void tme_sparc_debug_external_check _TME_P((struct tme_sparc *, int));
 void tme_sparc_do_reset _TME_P((struct tme_sparc *));
 void tme_sparc_do_idle _TME_P((struct tme_sparc *));
 void tme_sparc32_external_check _TME_P((struct tme_sparc *, int));

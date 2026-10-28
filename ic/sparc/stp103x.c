@@ -3775,6 +3775,9 @@ _tme_stp103x_external_check(struct tme_sparc *ic,
 			    int flags)
 {
 
+  /* the debugger may want this CPU to stop: */
+  tme_sparc_debug_external_check(ic, flags);
+
   /* if RESET_L has been negated since the last check: */
   if (__tme_predict_false(tme_memory_atomic_read_flag(&ic->tme_sparc_external_reset_negated))) {
 

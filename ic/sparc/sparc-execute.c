@@ -376,8 +376,19 @@ _TME_SPARC_EXECUTE_NAME(struct tme_sparc *ic)
     /* we can't know that this instruction is a taken branch to .: */
     assert (!branch_dot);
 
+    /* the debugger may stop us before this instruction.  an annulled
+       instruction doesn't run, and since the annulled bit isn't kept
+       in the processor structure, we can't stop before one: */
+    if (__tme_predict_false(ic->_tme_sparc_debug.tme_debug_cpu_slow)
+	&& !annulled
+	&& tme_debug_cpu_check(&ic->_tme_sparc_debug,
+			       ic->tme_sparc_ireg(TME_SPARC_IREG_PC_NEXT))) {
+      tme_sparc_debug_enter(ic);
+    }
+
     /* we are going to use one instruction in the burst: */
     ic->_tme_sparc_instruction_burst_remaining--;
+    ic->_tme_sparc_debug_insns++;
 #ifdef _TME_SPARC_STATS
     ic->tme_sparc_stats.tme_sparc_stats_insns_total++;
 #endif /* _TME_SPARC_STATS */
@@ -625,6 +636,7 @@ _TME_SPARC_EXECUTE_NAME(struct tme_sparc *ic)
 	/* if the current instruction TLB entry is not the invalid TLB
 	   entry, and there is an instructions thunk for this PC: */
 	if (__tme_predict_true(itlb_current != &itlb_invalid
+			       && !ic->_tme_sparc_debug.tme_debug_cpu_slow
 			       && ((insns_thunk
 				   = tme_sparc_recode(ic,
 						      itlb_current,

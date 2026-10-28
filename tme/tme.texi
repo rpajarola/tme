@@ -1200,8 +1200,9 @@ or dnsmasq (portably). See docs for details...
 
 The control socket lets programs (scripts, test harnesses, AI agents)
 drive tmesh: stop and continue the CPU, single-step it, set
-breakpoints, read its registers, read what the guest writes to a
-serial console and type into it, and run any tmesh command.  Requests,
+breakpoints, read and write its registers and memory, read what the
+guest writes to a serial console and type into it, and run any tmesh
+command.  Requests,
 responses and events are lines of JSON.  The protocol is the same as
 that of GXemul's control socket.
 
@@ -1239,7 +1240,9 @@ few hundred instructions.  While breakpoints are set or the CPU is
 stepping, the CPU checks before every instruction, which is slower;
 otherwise it runs at its normal speed.
 
-So far, only m68k CPUs can be stopped and inspected.
+The m68k and SPARC CPUs can be stopped and inspected.  On the
+UltraSPARC, the registers are the integer registers and the PCs, and
+memory can't be read yet.
 
 @menu
 * Control Client::
@@ -1260,6 +1263,7 @@ tmesh --ctl @var{socket} [--wait] [--timeout @var{seconds}] @var{command} [@var{
 The @var{argument} is either a JSON object with the request's
 parameters, or a plain value for: @code{raw} (@code{line}),
 @code{step} (@code{n}), @code{break_add} (@code{pc}),
+@code{mem_read} (@code{addr}),
 @code{break_del} (@code{id}), @code{console_read} (@code{since}),
 @code{console_write} (@code{data}), and @code{run_until} (a console
 pattern).
@@ -1311,13 +1315,17 @@ Events come unasked, without an @code{id}:
 The reason for a stop is @code{breakpoint} (with the breakpoint's
 @code{bp}), @code{step}, @code{pause}, or @code{run_until} (with the
 @code{condition} which happened).  Addresses and register values are
-hexadecimal strings, and an address can also be given as a number.
-@code{ninstrs} is about how many instructions the first CPU has run,
-counted per run of instructions except while stepping.
+hexadecimal strings.  An address can also be given as a number, or as
+a register of the CPU, optionally plus or minus a number, such as
+@code{"pc"}, @code{"a7+8"} or @code{"o6-64"}.  @code{ninstrs} is
+about how many instructions the first CPU has run: on the m68k,
+counted per run of instructions except while stepping; on the SPARC,
+exactly, but without the instructions in recompiled code.
 
 The error codes are @code{bad_request}, @code{unknown_cmd},
 @code{bad_arg}, @code{not_stopped}, @code{no_such_cpu},
-@code{no_such_console}, @code{no_such_breakpoint} and @code{busy}.
+@code{no_such_console}, @code{no_such_breakpoint}, @code{mem_fault}
+(nothing could be read or written at the address) and @code{busy}.
 
 @node Control Commands
 @subsection Control Commands
@@ -1352,12 +1360,40 @@ Exits tmesh, after an @code{exited} event.
 
 @item regs
 The registers of a @code{cpu}, all of them or the list of
-@code{names}: on m68k, @code{d0}-@code{d7}, @code{a0}-@code{a7},
+@code{names}.  On the m68k: @code{d0}-@code{d7}, @code{a0}-@code{a7},
 @code{pc}, @code{sr}, @code{usp}, @code{isp}, and as the model has
 them, @code{sfc}, @code{dfc}, @code{vbr}, @code{msp}, @code{cacr} and
 @code{caar}.  @code{a7} is the stack pointer in use, which is also
 shown as the one of @code{usp}, @code{isp} or @code{msp} that the
-status register selects.
+status register selects.  On the SPARC: @code{g0}-@code{g7},
+@code{o0}-@code{o7}, @code{l0}-@code{l7} and @code{i0}-@code{i7} in
+the current window, @code{pc} (the next instruction to run),
+@code{npc}, @code{y}, and on SPARC v7 and v8, @code{psr}, @code{wim}
+and @code{tbr}.  A stop is never between an annulling branch and the
+instruction it annuls.
+
+@item reg_set
+Sets the register @code{name} of a stopped @code{cpu} to
+@code{value}, and returns the @code{value} as now stored.  On the
+m68k, setting @code{sr} switches the stack pointers as its S and M
+bits say; on the SPARC, setting @code{psr} switches the register
+window as its CWP says.
+
+@item mem_read
+Reads @code{len} (default 64) bytes of a @code{cpu}'s memory at
+@code{addr}, and returns them as @code{data}, in hexadecimal, with
+@code{fault_at} if only some of them could be read.  The address is
+virtual, in the CPU's data space, or in the address @code{space}
+given: an m68k function code, or a SPARC ASI.  Only memory is read,
+never device registers, and SPARC ASIs that aren't memory (such as
+MMU control spaces) can't be read.
+
+@item mem_write
+Writes @code{data}, in hexadecimal, to a stopped @code{cpu}'s memory
+at @code{addr}, as @code{mem_read} reads it, and returns how many
+bytes were @code{written}, with @code{fault_at} if not all of them.
+ROM can't be written.  On the SPARC, a write throws away all
+recompiled code.
 
 @item break_add
 Adds a breakpoint at @code{pc} for a @code{cpu}, and returns its

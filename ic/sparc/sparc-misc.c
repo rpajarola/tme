@@ -170,6 +170,315 @@ _tme_sparc_idle_reset(struct tme_sparc *ic)
   }
 }
 
+/* this stops the CPU for the debugger, before the instruction at
+   PC_next.  it doesn't return: */
+void
+tme_sparc_debug_enter(struct tme_sparc *ic)
+{
+  ic->_tme_sparc_debug_mode = ic->_tme_sparc_mode;
+  ic->_tme_sparc_debug_announced = FALSE;
+  ic->_tme_sparc_mode = TME_SPARC_MODE_DEBUG;
+  tme_sparc_redispatch(ic);
+}
+
+/* the external check functions call this first, to stop for the
+   debugger if it wants this CPU to stop: */
+void
+tme_sparc_debug_external_check(struct tme_sparc *ic, int flags)
+{
+  if (ic->_tme_sparc_debug.tme_debug_cpu_stop_requested
+      && (ic->_tme_sparc_mode == TME_SPARC_MODE_EXECUTION
+	  || ic->_tme_sparc_mode == TME_SPARC_MODE_STOP
+	  || ic->_tme_sparc_mode == TME_SPARC_MODE_HALT
+	  || ic->_tme_sparc_mode == TME_SPARC_MODE_OFF)) {
+    if (flags & TME_SPARC_EXTERNAL_CHECK_MUTEX_LOCKED) {
+      tme_mutex_unlock(&ic->tme_sparc_external_mutex);
+    }
+    (void) tme_debug_cpu_check(&ic->_tme_sparc_debug,
+			       (*ic->_tme_sparc_debug.tme_debug_cpu_pc)(&ic->_tme_sparc_debug));
+    tme_sparc_debug_enter(ic);
+  }
+}
+
+/* the debug function, used while the debugger has the processor
+   stopped: */
+static void
+tme_sparc_debug_stopped(struct tme_sparc *ic)
+{
+  /* lock the external mutex: */
+  tme_mutex_lock(&ic->tme_sparc_external_mutex);
+
+  /* loop forever: */
+  for (;;) {
+
+    /* tell the debugger, once: */
+    if (!ic->_tme_sparc_debug_announced) {
+      ic->_tme_sparc_debug_announced = TRUE;
+      tme_debug_cpu_stopped(&ic->_tme_sparc_debug);
+    }
+
+    /* if the debugger lets us go, go back to what we were doing: */
+    if (tme_debug_cpu_resuming(&ic->_tme_sparc_debug)) {
+      tme_mutex_unlock(&ic->tme_sparc_external_mutex);
+      ic->_tme_sparc_mode = ic->_tme_sparc_debug_mode;
+      tme_sparc_redispatch(ic);
+    }
+
+    /* await the debugger: */
+    tme_cond_wait_yield(&ic->tme_sparc_external_cond, &ic->tme_sparc_external_mutex);
+  }
+}
+
+/* the debugger's functions: */
+static void
+_tme_sparc_debug_wakeup(struct tme_debug_cpu *debug)
+{
+  struct tme_sparc *ic;
+
+  /* make the CPU do an external check soon, and wake it if it is
+     waiting: */
+  ic = debug->tme_debug_cpu_private;
+  tme_mutex_lock(&ic->tme_sparc_external_mutex);
+  tme_memory_atomic_write_flag(&ic->tme_sparc_external_flag, TRUE);
+  tme_cond_notify(&ic->tme_sparc_external_cond, TRUE);
+  tme_mutex_unlock(&ic->tme_sparc_external_mutex);
+}
+
+/* this gets or sets a PC (TME_SPARC_IREG_PC_NEXT is the PC of the
+   next instruction, and TME_SPARC_IREG_PC_NEXT_NEXT its nPC): */
+static tme_uint64_t
+_tme_sparc_debug_ireg(struct tme_sparc *ic, unsigned int ireg)
+{
+#ifdef TME_HAVE_INT64_T
+  if (TME_SPARC_VERSION(ic) >= 9) {
+    return (ic->tme_sparc_ireg_uint64(ireg));
+  }
+#endif /* TME_HAVE_INT64_T */
+  return (ic->tme_sparc_ireg_uint32(ireg));
+}
+
+static void
+_tme_sparc_debug_ireg_set(struct tme_sparc *ic, unsigned int ireg, tme_uint64_t value)
+{
+#ifdef TME_HAVE_INT64_T
+  if (TME_SPARC_VERSION(ic) >= 9) {
+    ic->tme_sparc_ireg_uint64(ireg) = value;
+    return;
+  }
+#endif /* TME_HAVE_INT64_T */
+  ic->tme_sparc_ireg_uint32(ireg) = value;
+}
+
+static tme_uint64_t
+_tme_sparc_debug_pc(struct tme_debug_cpu *debug)
+{
+  return (_tme_sparc_debug_ireg(debug->tme_debug_cpu_private, TME_SPARC_IREG_PC_NEXT));
+}
+
+static tme_uint64_t
+_tme_sparc_debug_insns(struct tme_debug_cpu *debug)
+{
+  struct tme_sparc *ic;
+
+  /* (instructions in recoded code aren't counted:) */
+  ic = debug->tme_debug_cpu_private;
+  return (ic->_tme_sparc_debug_insns);
+}
+
+/* the registers: the integer registers in the current window, the PCs,
+   and, on sparc32, the PSR, WIM, TBR and Y: */
+static const char * const _tme_sparc_debug_regs[] = {
+  "g0", "g1", "g2", "g3", "g4", "g5", "g6", "g7",
+  "o0", "o1", "o2", "o3", "o4", "o5", "o6", "o7",
+  "l0", "l1", "l2", "l3", "l4", "l5", "l6", "l7",
+  "i0", "i1", "i2", "i3", "i4", "i5", "i6", "i7",
+  "pc", "npc", "y", "psr", "wim", "tbr",
+  NULL
+};
+#define _TME_SPARC_DEBUG_REGS_V9	(35)
+#define _TME_SPARC_DEBUG_REGS_V8	(38)
+
+static int
+_tme_sparc_debug_reg(struct tme_debug_cpu *debug, unsigned int reg_i, struct tme_debug_reg *reg)
+{
+  struct tme_sparc *ic;
+  const char *name;
+  unsigned int ireg;
+
+  ic = debug->tme_debug_cpu_private;
+  if (reg_i >= (TME_SPARC_VERSION(ic) >= 9
+		? _TME_SPARC_DEBUG_REGS_V9
+		: _TME_SPARC_DEBUG_REGS_V8)) {
+    return (FALSE);
+  }
+  name = _tme_sparc_debug_regs[reg_i];
+  reg->tme_debug_reg_name = name;
+  reg->tme_debug_reg_bits = (TME_SPARC_VERSION(ic) >= 9 ? 64 : 32);
+  if (reg_i < 32) {
+    ireg = reg_i;
+    TME_SPARC_REG_INDEX(ic, ireg);
+    reg->tme_debug_reg_value = (reg_i == 0 ? 0 : _tme_sparc_debug_ireg(ic, ireg));
+  }
+  else if (!strcmp(name, "pc")) {
+    reg->tme_debug_reg_value = _tme_sparc_debug_ireg(ic, TME_SPARC_IREG_PC_NEXT);
+  }
+  else if (!strcmp(name, "npc")) {
+    reg->tme_debug_reg_value = _tme_sparc_debug_ireg(ic, TME_SPARC_IREG_PC_NEXT_NEXT);
+  }
+  else if (!strcmp(name, "y")) {
+    reg->tme_debug_reg_value = _tme_sparc_debug_ireg(ic, TME_SPARC_IREG_Y);
+  }
+  else if (!strcmp(name, "psr")) {
+    reg->tme_debug_reg_value = ic->tme_sparc32_ireg_psr;
+  }
+  else if (!strcmp(name, "wim")) {
+    reg->tme_debug_reg_value = ic->tme_sparc32_ireg_wim;
+  }
+  else {
+    reg->tme_debug_reg_value = ic->tme_sparc32_ireg_tbr;
+  }
+  return (TRUE);
+}
+
+static int
+_tme_sparc_debug_reg_set(struct tme_debug_cpu *debug, const char *name, tme_uint64_t value)
+{
+  struct tme_sparc *ic;
+  struct tme_debug_reg reg;
+  unsigned int reg_i, ireg;
+  unsigned int cwp, cwp_offset;
+
+  ic = debug->tme_debug_cpu_private;
+  for (reg_i = 0; _tme_sparc_debug_reg(debug, reg_i, &reg); reg_i++) {
+    if (!strcmp(reg.tme_debug_reg_name, name)) {
+      break;
+    }
+  }
+  if (!_tme_sparc_debug_reg(debug, reg_i, &reg)
+      || reg_i == 0) {
+    return (FALSE);
+  }
+  if (reg_i < 32) {
+    ireg = reg_i;
+    TME_SPARC_REG_INDEX(ic, ireg);
+    _tme_sparc_debug_ireg_set(ic, ireg, value);
+  }
+  else if (!strcmp(name, "pc")) {
+    _tme_sparc_debug_ireg_set(ic, TME_SPARC_IREG_PC_NEXT, value);
+  }
+  else if (!strcmp(name, "npc")) {
+    _tme_sparc_debug_ireg_set(ic, TME_SPARC_IREG_PC_NEXT_NEXT, value);
+  }
+  else if (!strcmp(name, "y")) {
+    _tme_sparc_debug_ireg_set(ic, TME_SPARC_IREG_Y, value);
+  }
+  else if (!strcmp(name, "psr")) {
+
+    /* a new CWP changes the register window: */
+    ic->tme_sparc32_ireg_psr = value;
+    cwp = TME_FIELD_MASK_EXTRACTU(ic->tme_sparc32_ireg_psr, TME_SPARC32_PSR_CWP);
+    if (cwp >= TME_SPARC_NWINDOWS(ic)) {
+      return (FALSE);
+    }
+    TME_SPARC32_CWP_UPDATE(ic, cwp, cwp_offset);
+  }
+  else if (!strcmp(name, "wim")) {
+    ic->tme_sparc32_ireg_wim = value;
+  }
+  else {
+    ic->tme_sparc32_ireg_tbr = value;
+  }
+  return (TRUE);
+}
+
+/* this reads or writes sparc32 memory for the debugger, through the
+   TLB entry that a data access would use, and only where the TLB entry
+   gives emulator memory.  special ASIs, such as MMU control spaces,
+   aren't accessed: */
+static unsigned int
+_tme_sparc32_debug_mem(struct tme_debug_cpu *debug, tme_uint64_t address,
+		       tme_uint8_t *buffer, unsigned int count, int write, int space)
+{
+  struct tme_sparc *ic;
+  struct tme_sparc_tlb *tlb;
+  tme_uint32_t asi_mask;
+  tme_bus_context_t context;
+  tme_uint32_t address32;
+  unsigned int done, chunk;
+  const tme_shared tme_uint8_t *emulator_off;
+  int ok;
+
+  ic = debug->tme_debug_cpu_private;
+  if (ic->_tme_sparc_bus_connection == NULL) {
+    return (0);
+  }
+
+  /* the ASI mask: */
+  if (space < 0) {
+    asi_mask = ic->tme_sparc_asi_mask_data;
+  }
+  else {
+    if (space >= (int) TME_ARRAY_ELS(ic->tme_sparc_asis)
+	|| (ic->tme_sparc_asis[space].tme_sparc_asi_mask_flags & TME_SPARC32_ASI_MASK_FLAG_SPECIAL)) {
+      return (0);
+    }
+    asi_mask = TME_SPARC32_ASI_MASK(space, space);
+  }
+  context = ic->tme_sparc_memory_context_default;
+
+  for (done = 0; done < count; done += chunk) {
+    address32 = address + done;
+
+    /* fill the TLB entry for this address: */
+    tlb = &ic->tme_sparc_tlbs[TME_SPARC_DTLB_ENTRY(ic, TME_SPARC_TLB_HASH(ic, context, address32))];
+    tme_token_invalid_clear(tlb->tme_sparc_tlb_bus_tlb.tme_bus_tlb_token);
+    tlb->tme_sparc_tlb_asi_mask = (asi_mask & ~TME_SPARC_ASI_MASK_FLAGS_AVAIL);
+    tlb->tme_sparc_tlb_context = context;
+    tme_sparc_callout_unlock(ic);
+    (*ic->_tme_sparc_bus_connection->tme_sparc_bus_tlb_fill)
+      (ic->_tme_sparc_bus_connection, tlb, asi_mask, address32,
+       (write ? TME_BUS_CYCLE_WRITE : TME_BUS_CYCLE_READ));
+    tme_sparc_callout_relock(ic);
+    tme_sparc_tlb_busy(tlb);
+
+    /* it must give emulator memory for this address: */
+    emulator_off = (write
+		    ? tlb->tme_sparc_tlb_emulator_off_write
+		    : tlb->tme_sparc_tlb_emulator_off_read);
+    ok = (!tme_bus_tlb_is_invalid(&tlb->tme_sparc_tlb_bus_tlb)
+	  && emulator_off != TME_EMULATOR_OFF_UNDEF
+	  && TME_SPARC_TLB_ASI_MASK_OK(tlb, asi_mask)
+	  && address32 >= (tme_bus_addr32_t) tlb->tme_sparc_tlb_addr_first
+	  && address32 <= (tme_bus_addr32_t) tlb->tme_sparc_tlb_addr_last);
+    chunk = 0;
+    if (ok) {
+      chunk = TME_MIN(count - done,
+		      ((tme_bus_addr32_t) tlb->tme_sparc_tlb_addr_last - address32) + 1);
+      if (write) {
+	memcpy((void *) (emulator_off + address32), buffer + done, chunk);
+      }
+      else {
+	memcpy(buffer + done, (const void *) (emulator_off + address32), chunk);
+      }
+    }
+
+    /* this TLB entry was filled for the debugger, perhaps for an
+       address the CPU wasn't using, so make the CPU (and any recode
+       TLB entry) fill it again: */
+    tme_sparc_tlb_unbusy(tlb);
+    tme_token_invalidate(tlb->tme_sparc_tlb_bus_tlb.tme_bus_tlb_token);
+    if (!ok) {
+      break;
+    }
+  }
+
+  /* code that was written may have been recoded: */
+  if (write && done > 0) {
+    tme_sparc_recode_invalidate_all(ic);
+  }
+  return (done);
+}
+
 /* the sparc thread: */
 static _tme_thret
 _tme_sparc_th(struct tme_sparc *ic)
@@ -209,6 +518,10 @@ _tme_sparc_th(struct tme_sparc *ic)
 
   case TME_SPARC_MODE_TIMING_LOOP:
     tme_sparc_timing_loop_finish(ic);
+    /* NOTREACHED */
+
+  case TME_SPARC_MODE_DEBUG:
+    tme_sparc_debug_stopped(ic);
     /* NOTREACHED */
 
   default:
@@ -859,6 +1172,24 @@ tme_sparc_new(struct tme_sparc *ic, const char * const *args, const void *extra,
   /* initialize recoding: */
   tme_sparc_recode_init(ic);
 
+  /* register for the debugger: */
+  ic->_tme_sparc_debug.tme_debug_cpu_element = ic->tme_sparc_element;
+  ic->_tme_sparc_debug.tme_debug_cpu_arch = "sparc";
+  ic->_tme_sparc_debug.tme_debug_cpu_model
+    = (strrchr(args[0], '/') != NULL ? strrchr(args[0], '/') + 1 : args[0]);
+  ic->_tme_sparc_debug.tme_debug_cpu_bits = (TME_SPARC_VERSION(ic) >= 9 ? 64 : 32);
+  ic->_tme_sparc_debug.tme_debug_cpu_big_endian = TRUE;
+  ic->_tme_sparc_debug.tme_debug_cpu_private = ic;
+  ic->_tme_sparc_debug.tme_debug_cpu_wakeup = _tme_sparc_debug_wakeup;
+  ic->_tme_sparc_debug.tme_debug_cpu_reg = _tme_sparc_debug_reg;
+  ic->_tme_sparc_debug.tme_debug_cpu_reg_set = _tme_sparc_debug_reg_set;
+  ic->_tme_sparc_debug.tme_debug_cpu_pc = _tme_sparc_debug_pc;
+  ic->_tme_sparc_debug.tme_debug_cpu_insns = _tme_sparc_debug_insns;
+  if (TME_SPARC_VERSION(ic) < 9) {
+    ic->_tme_sparc_debug.tme_debug_cpu_mem = _tme_sparc32_debug_mem;
+  }
+  tme_debug_cpu_register(&ic->_tme_sparc_debug);
+
   /* start the sparc thread: */
   tme_thread_create(&ic->tme_sparc_thread, (tme_thread_t) _tme_sparc_th, ic);
 
@@ -959,6 +1290,9 @@ tme_sparc32_external_check(struct tme_sparc *ic,
 			   int flags)
 {
   unsigned int ipl;
+
+  /* the debugger may want this CPU to stop: */
+  tme_sparc_debug_external_check(ic, flags);
 
   /* if RESET has been negated since the last check: */
   if (__tme_predict_false(tme_memory_atomic_read_flag(&ic->tme_sparc_external_reset_negated))) {
