@@ -1,5 +1,9 @@
 2026-10-28  Rico Pajarola  <rp@servium.ch>
 
+	* Release 1.2.2.
+
+	* configure.ac: Bumped version to 1.2.2.
+
 	* tmesh/tmesh-ctl.c, tmesh/tmesh-ctl.h, tmesh/tmesh.c: Added the
 	control socket's watch_add, watch_del, watch_list, trace_read,
 	devices and subscribe commands, console and log events, and stops
