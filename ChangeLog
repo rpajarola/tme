@@ -1,5 +1,9 @@
 2026-10-29  Rico Pajarola  <rp@servium.ch>
 
+	* Release 1.2.3.
+
+	* configure.ac: Bumped version to 1.2.3.
+
 	* tmesh/tmesh-ctl.c, tme/tme.texi: Added the control socket's
 	keyboard command, which types text, or presses keys, on a
 	display's keyboard.
