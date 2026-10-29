@@ -42,6 +42,7 @@
 #include <tme/generic/mouse.h>
 #include <tme/threads.h>
 #include <tme/hash.h>
+#include <tme/debug.h>
 #include "display-menu.h"
 
 /* macros: */
@@ -105,6 +106,8 @@ struct tme_screen {
   /* any recording of the screen: */
   struct tme_display_record *tme_screen_record;
 
+  /* the screen, for the control socket's screendump: */
+  struct tme_debug_screen tme_screen_debug;
 };
 
 /* a bad keysym: */
@@ -239,6 +242,7 @@ int _tme_screen_configure _TME_P((struct tme_screen *screen));
 int tme_display_init _TME_P((struct tme_element *, struct tme_display *));
 tme_uint32_t _tme_display_event_time _TME_P((void));
 int _tme_display_screenshot _TME_P((struct tme_screen *, const char *, char **));
+int _tme_display_screendump _TME_P((struct tme_debug_screen *, const char *, char **, int *, int *));
 int _tme_display_record_start _TME_P((struct tme_screen *, const char *, char **));
 int _tme_display_record_stop _TME_P((struct tme_screen *, char **));
 int _tme_display_recording _TME_P((struct tme_screen *));

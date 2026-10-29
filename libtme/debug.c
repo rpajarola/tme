@@ -67,6 +67,9 @@ static struct tme_debug_console *_tme_debug_consoles;
 /* the named elements, the buses, and the cycle handlers: */
 static struct _tme_debug_element *_tme_debug_elements;
 static struct _tme_debug_bus *_tme_debug_buses;
+
+/* the screens, in the order registered: */
+static struct tme_debug_screen *_tme_debug_screens;
 static struct _tme_debug_cycle *_tme_debug_cycles;
 static unsigned int _tme_debug_cycles_count;
 
@@ -661,6 +664,25 @@ tme_debug_trace_read(tme_uint64_t since,
   }
   tme_mutex_unlock(&_tme_debug_mutex);
   return (count);
+}
+
+/* this registers a screen, which can then be saved: */
+void
+tme_debug_screen_register(struct tme_debug_screen *screen)
+{
+  struct tme_debug_screen **_prev;
+
+  _tme_debug_init();
+  for (_prev = &_tme_debug_screens; *_prev != NULL; _prev = &(*_prev)->tme_debug_screen_next);
+  screen->tme_debug_screen_next = NULL;
+  *_prev = screen;
+}
+
+/* this returns the first screen: */
+struct tme_debug_screen *
+tme_debug_screens(void)
+{
+  return (_tme_debug_screens);
 }
 
 /* this registers a bus, whose devices are then listed, and watched: */

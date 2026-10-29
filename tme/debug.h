@@ -232,6 +232,22 @@ struct tme_debug_region {
   tme_uint64_t tme_debug_region_last;
 };
 
+/* a screen that can be saved as an image file: */
+struct tme_debug_screen {
+
+  /* the next screen: */
+  struct tme_debug_screen *tme_debug_screen_next;
+
+  /* the framebuffer's element, and the display's private data: */
+  struct tme_element *tme_debug_screen_element;
+  void *tme_debug_screen_private;
+
+  /* this saves the screen as a PNG file, or if the file is NULL, as a
+     new file in the current directory, returning its name and the
+     image's size, and an errno value: */
+  int (*tme_debug_screen_dump) _TME_P((struct tme_debug_screen *, _tme_const char *, char **, int *, int *));
+};
+
 /* a console that can be read and typed into: */
 struct tme_debug_console {
 
@@ -295,5 +311,8 @@ void tme_debug_bus_register _TME_P((struct tme_element *, struct tme_bus *));
 void tme_debug_bus_tlb _TME_P((struct tme_element *, struct tme_bus_tlb *));
 int (*tme_debug_bus_tlb_cycle _TME_P((_tme_const struct tme_bus_tlb *))) _TME_P((void *, struct tme_bus_cycle *));
 unsigned int tme_debug_regions _TME_P((struct tme_debug_region *, unsigned int));
+
+void tme_debug_screen_register _TME_P((struct tme_debug_screen *));
+struct tme_debug_screen *tme_debug_screens _TME_P((void));
 
 #endif /* !_TME_DEBUG_H */

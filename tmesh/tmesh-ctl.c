@@ -1747,6 +1747,68 @@ _TMESH_CTL_HANDLER(_tmesh_ctl_cmd_devices)
   return (TRUE);
 }
 
+/* screendump saves a screen as a PNG file.  the file's name in the
+   result is absolute, as the client's current directory may not be
+   tmesh's: */
+_TMESH_CTL_HANDLER(_tmesh_ctl_cmd_screendump)
+{
+  cJSON *file;
+  struct tme_debug_screen *screen;
+  tme_int64_t screen_i, skip;
+  int count, width, height, rc;
+  char *name, path[4096];
+  const char *element_name;
+
+  file = cJSON_GetObjectItemCaseSensitive(req, "file");
+  if (file != NULL && !cJSON_IsNull(file)
+      && (!cJSON_IsString(file) || file->valuestring[0] == '\0')) {
+    return (_tmesh_ctl_fail(err, "bad_arg", "'file' should be a file name"));
+  }
+  if (!_tmesh_ctl_get_int(req, "screen", 0, &screen_i, err)) {
+    return (FALSE);
+  }
+  count = 0;
+  for (screen = tme_debug_screens(); screen != NULL; screen = screen->tme_debug_screen_next) {
+    count++;
+  }
+  if (count == 0) {
+    return (_tmesh_ctl_fail(err, "no_such_screen", "there are no screens (a screen is a framebuffer connected to a display, e.g. tme/host/sdl/display)"));
+  }
+  if (screen_i < 0 || screen_i >= count) {
+    return (_tmesh_ctl_fail(err, "no_such_screen", "no screen %lld; there %s %d", (long long) screen_i, (count == 1 ? "is" : "are"), count));
+  }
+  screen = tme_debug_screens();
+  for (skip = screen_i; skip > 0; skip--) {
+    screen = screen->tme_debug_screen_next;
+  }
+
+  rc = (*screen->tme_debug_screen_dump)(screen, (cJSON_IsString(file) ? file->valuestring : NULL), &name, &width, &height);
+  if (rc != TME_OK) {
+    if (name == NULL) {
+      return (_tmesh_ctl_fail(err, "capture_failed", "the screen can't be captured yet: %s", strerror(rc)));
+    }
+    _tmesh_ctl_fail(err, "io_error", "%s: %s", name, strerror(rc));
+    tme_free(name);
+    return (FALSE);
+  }
+
+  if (name[0] == '/' || getcwd(path, sizeof(path)) == NULL) {
+    snprintf(path, sizeof(path), "%s", name);
+  }
+  else {
+    snprintf(path + strlen(path), sizeof(path) - strlen(path), "/%s", name);
+  }
+  tme_free(name);
+
+  cJSON_AddStringToObject(result, "file", path);
+  cJSON_AddNumberToObject(result, "screen", (double) screen_i);
+  element_name = tme_debug_element_name(screen->tme_debug_screen_element);
+  cJSON_AddStringToObject(result, "name", element_name != NULL ? element_name : "");
+  cJSON_AddNumberToObject(result, "width", width);
+  cJSON_AddNumberToObject(result, "height", height);
+  return (TRUE);
+}
+
 /* events as they happen: */
 
 _TMESH_CTL_HANDLER(_tmesh_ctl_cmd_subscribe)
@@ -1843,6 +1905,7 @@ static const struct {
   { "trace_read", _tmesh_ctl_cmd_trace_read, "since max" },
   { "devices", _tmesh_ctl_cmd_devices, "" },
   { "subscribe", _tmesh_ctl_cmd_subscribe, "console log" },
+  { "screendump", _tmesh_ctl_cmd_screendump, "file screen" },
   { NULL, NULL, NULL }
 };
 
@@ -2357,6 +2420,7 @@ tmesh_ctl_client(int argc, char **argv)
     { "mem_read", "addr", FALSE },
     { "watch_del", "watch", TRUE },
     { "trace_read", "since", TRUE },
+    { "screendump", "file", FALSE },
     { NULL, NULL, FALSE }
   };
   const char *spec, *cmd, *arg;

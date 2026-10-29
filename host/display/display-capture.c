@@ -282,6 +282,37 @@ _tme_display_png_write(const char *name, const struct tme_display_image *image)
   return (TME_OK);
 }
 
+/* this saves an image of a screen as a PNG file, or if the file is
+   NULL, a new file in the current directory, with the display mutex
+   locked, returning its name and the image's size, and an errno
+   value: */
+static int
+_tme_display_screendump_locked(struct tme_screen *screen,
+			       const char *file,
+			       char **_name,
+			       int *_width,
+			       int *_height,
+			       char **_output)
+{
+  struct tme_display_image image;
+  int rc;
+
+  *_name = NULL;
+  rc = _tme_display_capture(screen, &image, _output);
+  if (rc != TME_OK) {
+    return (rc);
+  }
+  *_name = (file != NULL ? tme_strdup(file) : _tme_display_capture_name("png"));
+  *_width = image.tme_display_image_width;
+  *_height = image.tme_display_image_height;
+  rc = _tme_display_png_write(*_name, &image);
+  tme_free(image.tme_display_image_pixels);
+  if (rc != TME_OK) {
+    tme_output_append_error(_output, "%s: %s", *_name, strerror(rc));
+  }
+  return (rc);
+}
+
 /* this saves a screenshot as a PNG file, with the display mutex
    locked, returning an errno value: */
 static int
@@ -289,26 +320,45 @@ _tme_display_screenshot_locked(struct tme_screen *screen,
 			       const char *file,
 			       char **_output)
 {
-  struct tme_display_image image;
   char *name;
+  int width, height;
   int rc;
 
-  rc = _tme_display_capture(screen, &image, _output);
-  if (rc != TME_OK) {
-    return (rc);
+  rc = _tme_display_screendump_locked(screen, file, &name, &width, &height, _output);
+  if (rc == TME_OK) {
+    _tme_display_capture_message(screen, _("Saved screenshot %s"), name);
+    tme_output_append(_output, "%s", name);
   }
-  name = (file != NULL ? tme_strdup(file) : _tme_display_capture_name("png"));
-  rc = _tme_display_png_write(name, &image);
-  tme_free(image.tme_display_image_pixels);
-  if (rc != TME_OK) {
-    tme_output_append_error(_output, "%s: %s", name, strerror(rc));
+  if (name != NULL) {
     tme_free(name);
-    return (rc);
   }
-  _tme_display_capture_message(screen, _("Saved screenshot %s"), name);
-  tme_output_append(_output, "%s", name);
-  tme_free(name);
-  return (TME_OK);
+  return (rc);
+}
+
+/* this saves a screen for the control socket's screendump, returning
+   an errno value: */
+int
+_tme_display_screendump(struct tme_debug_screen *debug_screen,
+			const char *file,
+			char **_name,
+			int *_width,
+			int *_height)
+{
+  struct tme_screen *screen;
+  struct tme_display *display;
+  char *output;
+  int rc;
+
+  screen = (struct tme_screen *) debug_screen->tme_debug_screen_private;
+  display = screen->tme_screen_display;
+  output = NULL;
+  tme_mutex_lock(&display->tme_display_mutex);
+  rc = _tme_display_screendump_locked(screen, file, _name, _width, _height, &output);
+  tme_mutex_unlock(&display->tme_display_mutex);
+  if (output != NULL) {
+    tme_free(output);
+  }
+  return (rc);
 }
 
 /* this saves a screenshot as a PNG file, returning an errno value: */

@@ -649,6 +649,13 @@ _tme_display_connection_make(struct tme_connection *conn,
     /* unlock our mutex: */
     tme_mutex_unlock(&display->tme_display_mutex);
 
+    /* the screen can be saved through the control socket: */
+    screen->tme_screen_debug.tme_debug_screen_element
+      = conn->tme_connection_other->tme_connection_element;
+    screen->tme_screen_debug.tme_debug_screen_private = screen;
+    screen->tme_screen_debug.tme_debug_screen_dump = _tme_display_screendump;
+    tme_debug_screen_register(&screen->tme_screen_debug);
+
     /* call our mode change function: */
     _tme_screen_mode_change((struct tme_fb_connection *) conn);
   }

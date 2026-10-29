@@ -1,3 +1,16 @@
+2026-10-29  Rico Pajarola  <rp@servium.ch>
+
+	* tmesh/tmesh-ctl.c, tme/tme.texi: Added the control socket's
+	screendump command, which saves a screen as a PNG file.
+
+	* tme/debug.h, libtme/debug.c (tme_debug_screen_register,
+	tme_debug_screens): A registry of screens that can be saved.
+
+	* host/display/display.c, host/display/display.h,
+	host/display/display-capture.c (_tme_display_screendump): Each
+	screen registers itself when its framebuffer connects, and can be
+	saved without the display's status message.
+
 2026-10-28  Rico Pajarola  <rp@servium.ch>
 
 	* Release 1.2.2.
