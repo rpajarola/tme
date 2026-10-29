@@ -112,7 +112,11 @@ struct tmesh_config_file {
 #define TMESH_CONFIG_DRIVE_CDROM	(1)
 #define TMESH_CONFIG_DRIVE_TAPE		(2)
 
-/* a SCSI drive: */
+/* the most logical units of a SCSI drive: */
+#define TMESH_CONFIG_LUNS		(8)
+
+/* a SCSI drive, or for a drive with several images (like an ACB-4000
+   with two disks), one of its logical units: */
 struct tmesh_config_drive {
 
   /* the drive's line, its image's line (or -1), and for a tape, the
@@ -127,6 +131,10 @@ struct tmesh_config_drive {
   const char *tmesh_config_drive_type;
   const char *tmesh_config_drive_file;
   int tmesh_config_drive_read_only;
+
+  /* the image's logical unit, and how many images the drive has: */
+  int tmesh_config_drive_lun;
+  int tmesh_config_drive_images;
 };
 
 /* how an Ethernet interface is connected: */
@@ -185,6 +193,7 @@ char *tmesh_config_shorten _TME_P((const struct tmesh_config *, const char *));
 /* drives: */
 int tmesh_config_drives _TME_P((const struct tmesh_config *, struct tmesh_config_drive **));
 void tmesh_config_drive_set_id _TME_P((struct tmesh_config *, const struct tmesh_config_drive *, int));
+void tmesh_config_drive_set_lun _TME_P((struct tmesh_config *, const struct tmesh_config_drive *, int));
 void tmesh_config_drive_set_type _TME_P((struct tmesh_config *, const struct tmesh_config_drive *, const char *));
 void tmesh_config_drive_set_file _TME_P((struct tmesh_config *, const struct tmesh_config_drive *, const char *));
 int tmesh_config_drive_add _TME_P((struct tmesh_config *, int));

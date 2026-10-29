@@ -908,6 +908,159 @@ _tmesh_config_set_arg(struct tmesh_config *config, int line_i, const char *word,
   tmesh_config_set_word(config, line_i, arg_i + 1, value);
 }
 
+/* this inserts a word into a line, before the word given: */
+static void
+_tmesh_config_insert_word(struct tmesh_config *config, int line_i, int arg_i, const char *word)
+{
+  struct tmesh_config_line *line;
+  char *added;
+
+  line = &config->tmesh_config_lines[line_i];
+  tmesh_config_list_add(&line->tmesh_config_line_argc,
+			&line->tmesh_config_line_argv,
+			word);
+  added = line->tmesh_config_line_argv[line->tmesh_config_line_argc - 1];
+  memmove(&line->tmesh_config_line_argv[arg_i + 1],
+	  &line->tmesh_config_line_argv[arg_i],
+	  sizeof(char *) * (line->tmesh_config_line_argc - 1 - arg_i));
+  line->tmesh_config_line_argv[arg_i] = added;
+  _tmesh_config_line_join(line);
+}
+
+/* this sets the element that a line connects its element to: */
+static void
+_tmesh_config_set_parent(struct tmesh_config *config, int line_i, const char *parent)
+{
+  const char *word;
+  int arg_i;
+
+  for (arg_i = 1; arg_i <= 2; arg_i++) {
+    word = tmesh_config_word(config, line_i, arg_i);
+    if (word != NULL && strcmp(word, "at") == 0) {
+      tmesh_config_set_word(config, line_i, arg_i + 1, parent);
+      return;
+    }
+  }
+}
+
+/* a line connects its element with the words between the element
+   that it connects to and the colon, like the logical unit in
+   "disk1 at sd0 lun 1: tme/host/posix/disk ...".  this returns the
+   index of the "lun" word among them, or -1: */
+static int
+_tmesh_config_lun_index(const struct tmesh_config *config, int line_i)
+{
+  int arg_i, colon;
+
+  colon = _tmesh_config_colon(config, line_i);
+  for (arg_i = 1; arg_i + 1 < colon; arg_i++) {
+    if (strcmp(tmesh_config_word(config, line_i, arg_i), "lun") == 0) {
+      return (arg_i);
+    }
+  }
+  return (-1);
+}
+
+/* this sets the logical unit that a line connects its element to, or
+   with -1, leaves it to the drive: */
+static void
+_tmesh_config_set_lun(struct tmesh_config *config, int line_i, int lun)
+{
+  char value[16];
+  int arg_i;
+
+  arg_i = _tmesh_config_lun_index(config, line_i);
+  if (lun < 0) {
+    if (arg_i >= 0) {
+      tmesh_config_set_word(config, line_i, arg_i + 1, NULL);
+      tmesh_config_set_word(config, line_i, arg_i, NULL);
+    }
+    return;
+  }
+  snprintf(value, sizeof(value), "%d", lun);
+  if (arg_i >= 0) {
+    tmesh_config_set_word(config, line_i, arg_i + 1, value);
+  }
+  else {
+    arg_i = _tmesh_config_colon(config, line_i);
+    _tmesh_config_insert_word(config, line_i, arg_i, "lun");
+    _tmesh_config_insert_word(config, line_i, arg_i + 1, value);
+  }
+}
+
+/* this returns the lines that connect images to a drive, in order,
+   and their logical units.  like the drive, an image without a "lun"
+   gets the first one that is free when its line runs: */
+static int
+_tmesh_config_images(const struct tmesh_config *config, int line_i, int *lines, int *luns)
+{
+  const char *element, *module, *parent, *word;
+  int host_i, lun, used, count;
+
+  element = _tmesh_config_element(config, line_i);
+  used = 0;
+  count = 0;
+  for (host_i = 0;
+       host_i < config->tmesh_config_n_lines && count < TMESH_CONFIG_LUNS;
+       host_i++) {
+    module = tmesh_config_module(config, host_i);
+    parent = _tmesh_config_parent(config, host_i);
+    if (module == NULL
+	|| parent == NULL
+	|| strcmp(parent, element) != 0
+	|| strncmp(module, "tme/host/posix/", 15) != 0) {
+      continue;
+    }
+    lun = -1;
+    if (_tmesh_config_lun_index(config, host_i) >= 0) {
+      word = tmesh_config_word(config, host_i, _tmesh_config_lun_index(config, host_i) + 1);
+      lun = atoi(word);
+    }
+    if (lun < 0 || lun >= TMESH_CONFIG_LUNS || (used & (1 << lun))) {
+      for (lun = 0; lun < TMESH_CONFIG_LUNS && (used & (1 << lun)); lun++);
+    }
+    used |= 1 << lun;
+    lines[count] = host_i;
+    luns[count] = lun;
+    count++;
+  }
+  return (count);
+}
+
+/* this gives each of a drive's images its logical unit explicitly,
+   so that adding, moving or removing one of them leaves the others
+   where they are: */
+static void
+_tmesh_config_images_fix(struct tmesh_config *config, int line_i)
+{
+  int lines[TMESH_CONFIG_LUNS], luns[TMESH_CONFIG_LUNS];
+  int count, i;
+
+  count = _tmesh_config_images(config, line_i, lines, luns);
+  for (i = 0; i < count; i++) {
+    _tmesh_config_set_lun(config, lines[i], luns[i]);
+  }
+}
+
+/* this drops the "lun 0" of each image that is alone on its drive: */
+static void
+_tmesh_config_images_tidy(struct tmesh_config *config)
+{
+  int lines[TMESH_CONFIG_LUNS], luns[TMESH_CONFIG_LUNS];
+  const char *module;
+  int line_i;
+
+  for (line_i = 0; line_i < config->tmesh_config_n_lines; line_i++) {
+    module = tmesh_config_module(config, line_i);
+    if (module != NULL
+	&& strncmp(module, "tme/scsi/", 9) == 0
+	&& _tmesh_config_images(config, line_i, lines, luns) == 1
+	&& luns[0] == 0) {
+      _tmesh_config_set_lun(config, lines[0], -1);
+    }
+  }
+}
+
 /* this returns the kinds of machines: */
 const struct tmesh_config_kind *
 tmesh_config_kinds(int *_count)
@@ -1242,13 +1395,15 @@ _tmesh_config_drive_kind(const struct tmesh_config *config, int line_i)
   return (-1);
 }
 
-/* this returns the SCSI drives: */
+/* this returns the SCSI drives, one for each image of a drive with
+   several: */
 int
 tmesh_config_drives(const struct tmesh_config *config, struct tmesh_config_drive **_drives)
 {
   struct tmesh_config_drive *drive;
-  const char *element, *module, *parent, *word;
-  int line_i, host_i, kind, count;
+  const char *element, *word;
+  int lines[TMESH_CONFIG_LUNS], luns[TMESH_CONFIG_LUNS];
+  int line_i, host_i, kind, count, images, image_i;
 
   *_drives = NULL;
   count = 0;
@@ -1257,43 +1412,44 @@ tmesh_config_drives(const struct tmesh_config *config, struct tmesh_config_drive
     if (kind < 0) {
       continue;
     }
-    *_drives = tme_renew(struct tmesh_config_drive, *_drives, count + 1);
-    drive = &(*_drives)[count++];
-    memset(drive, 0, sizeof(*drive));
-    drive->tmesh_config_drive_line = line_i;
-    drive->tmesh_config_drive_host_line = -1;
-    drive->tmesh_config_drive_load_line = -1;
-    drive->tmesh_config_drive_kind = kind;
-    word = tmesh_config_arg(config, line_i, "id");
-    drive->tmesh_config_drive_id = (word != NULL ? atoi(word) : -1);
-    word = tmesh_config_arg(config, line_i, "type");
-    drive->tmesh_config_drive_type = (word != NULL ? word : "");
-    drive->tmesh_config_drive_file = "";
 
-    /* find the drive's image: */
-    element = _tmesh_config_element(config, line_i);
-    for (host_i = 0; host_i < config->tmesh_config_n_lines; host_i++) {
-      module = tmesh_config_module(config, host_i);
-      parent = _tmesh_config_parent(config, host_i);
-      if (module == NULL
-	  || parent == NULL
-	  || strcmp(parent, element) != 0
-	  || strncmp(module, "tme/host/posix/", 15) != 0) {
-	continue;
+    /* a tape drive has one tape, loaded by a command: */
+    images = _tmesh_config_images(config, line_i, lines, luns);
+    if (kind == TMESH_CONFIG_DRIVE_TAPE && images > 1) {
+      images = 1;
+    }
+    image_i = 0;
+    do {
+      *_drives = tme_renew(struct tmesh_config_drive, *_drives, count + 1);
+      drive = &(*_drives)[count++];
+      memset(drive, 0, sizeof(*drive));
+      drive->tmesh_config_drive_line = line_i;
+      drive->tmesh_config_drive_host_line = -1;
+      drive->tmesh_config_drive_load_line = -1;
+      drive->tmesh_config_drive_kind = kind;
+      word = tmesh_config_arg(config, line_i, "id");
+      drive->tmesh_config_drive_id = (word != NULL ? atoi(word) : -1);
+      word = tmesh_config_arg(config, line_i, "type");
+      drive->tmesh_config_drive_type = (word != NULL ? word : "");
+      drive->tmesh_config_drive_file = "";
+      drive->tmesh_config_drive_images = images;
+      if (images == 0) {
+	break;
       }
+
+      /* the image: */
+      host_i = lines[image_i];
       drive->tmesh_config_drive_host_line = host_i;
+      drive->tmesh_config_drive_lun = luns[image_i];
       word = tmesh_config_arg(config, host_i, "file");
       if (word != NULL) {
 	drive->tmesh_config_drive_file = word;
       }
       drive->tmesh_config_drive_read_only
 	= (_tmesh_config_arg_index(config, host_i, "read-only") >= 0);
-      break;
-    }
 
-    /* find a command that loads a tape: */
-    if (drive->tmesh_config_drive_host_line >= 0) {
-      element = _tmesh_config_element(config, drive->tmesh_config_drive_host_line);
+      /* find a command that loads a tape: */
+      element = _tmesh_config_element(config, host_i);
       for (host_i = 0; host_i < config->tmesh_config_n_lines; host_i++) {
 	if (tmesh_config_word(config, host_i, 0) != NULL
 	    && strcmp(tmesh_config_word(config, host_i, 0), "command") == 0
@@ -1312,28 +1468,28 @@ tmesh_config_drives(const struct tmesh_config *config, struct tmesh_config_drive
 	  break;
 	}
       }
-    }
+    } while (++image_i < images);
   }
   return (count);
 }
 
-/* this sets a drive's SCSI ID: */
-void
-tmesh_config_drive_set_id(struct tmesh_config *config,
-			  const struct tmesh_config_drive *drive, int id)
+/* this returns the line of the disk drive with a SCSI ID, other than
+   the line given, or -1: */
+static int
+_tmesh_config_disk_with_id(const struct tmesh_config *config, int other_i, int id)
 {
-  char value[16];
+  const char *word;
+  int line_i;
 
-  snprintf(value, sizeof(value), "%d", id);
-  _tmesh_config_set_arg(config, drive->tmesh_config_drive_line, "id", value);
-}
-
-/* this sets a drive's type: */
-void
-tmesh_config_drive_set_type(struct tmesh_config *config,
-			    const struct tmesh_config_drive *drive, const char *type)
-{
-  _tmesh_config_set_arg(config, drive->tmesh_config_drive_line, "type", type);
+  for (line_i = 0; line_i < config->tmesh_config_n_lines; line_i++) {
+    if (line_i != other_i
+	&& _tmesh_config_drive_kind(config, line_i) == TMESH_CONFIG_DRIVE_DISK
+	&& (word = tmesh_config_arg(config, line_i, "id")) != NULL
+	&& atoi(word) == id) {
+      return (line_i);
+    }
+  }
+  return (-1);
 }
 
 /* this returns an element name with a prefix that no element has: */
@@ -1349,6 +1505,111 @@ _tmesh_config_new_element(const struct tmesh_config *config, const char *prefix,
       return;
     }
   }
+}
+
+/* this sets a drive's SCSI ID.  a disk image given the ID of another
+   disk drive becomes that drive's next logical unit, and one that
+   leaves a drive with other images gets a drive of its own: */
+void
+tmesh_config_drive_set_id(struct tmesh_config *config,
+			  const struct tmesh_config_drive *drive, int id)
+{
+  int lines[TMESH_CONFIG_LUNS], luns[TMESH_CONFIG_LUNS];
+  char value[16], name[32], target[32], *text;
+  const char *word;
+  int line_i, host_i, target_i, count, used, lun, i;
+
+  line_i = drive->tmesh_config_drive_line;
+  host_i = drive->tmesh_config_drive_host_line;
+  target_i = -1;
+  if (drive->tmesh_config_drive_kind == TMESH_CONFIG_DRIVE_DISK && host_i >= 0) {
+    target_i = _tmesh_config_disk_with_id(config, line_i, id);
+  }
+
+  /* a drive of its own: */
+  if (target_i < 0) {
+    snprintf(value, sizeof(value), "%d", id);
+    if (drive->tmesh_config_drive_images <= 1) {
+      _tmesh_config_set_arg(config, line_i, "id", value);
+      return;
+    }
+    _tmesh_config_images_fix(config, line_i);
+    _tmesh_config_new_element(config, "sd", name, sizeof(name));
+    text = tme_new(char, strlen(name) + 100);
+    sprintf(text, "%s at %s: tme/scsi/disk id %s", name,
+	    _tmesh_config_parent(config, line_i), value);
+    tmesh_config_insert(config, host_i, text);
+    tme_free(text);
+    word = tmesh_config_arg(config, line_i, "type");
+    if (word != NULL) {
+      _tmesh_config_set_arg(config, host_i, "type", word);
+    }
+    _tmesh_config_set_parent(config, host_i + 1, name);
+    _tmesh_config_set_lun(config, host_i + 1, -1);
+    _tmesh_config_images_tidy(config);
+    return;
+  }
+
+  /* the next logical unit of the other drive: */
+  count = _tmesh_config_images(config, target_i, lines, luns);
+  used = 0;
+  for (i = 0; i < count; i++) {
+    used |= 1 << luns[i];
+  }
+  for (lun = 0; lun < TMESH_CONFIG_LUNS && (used & (1 << lun)); lun++);
+  if (lun == TMESH_CONFIG_LUNS) {
+    return;
+  }
+  snprintf(target, sizeof(target), "%s", _tmesh_config_element(config, target_i));
+  _tmesh_config_images_fix(config, line_i);
+  _tmesh_config_images_fix(config, target_i);
+
+  /* move the image's line after the other drive's last one, and
+     remove its old drive if it was the only image: */
+  text = tme_strdup(config->tmesh_config_lines[host_i].tmesh_config_line_text);
+  tmesh_config_delete(config, host_i);
+  if (drive->tmesh_config_drive_images <= 1) {
+    tmesh_config_delete(config, line_i - (host_i < line_i));
+  }
+  target_i = tmesh_config_find(config, target);
+  count = _tmesh_config_images(config, target_i, lines, luns);
+  host_i = (count > 0 ? lines[count - 1] : target_i) + 1;
+  tmesh_config_insert(config, host_i, text);
+  tme_free(text);
+  _tmesh_config_set_parent(config, host_i, target);
+  _tmesh_config_set_lun(config, host_i, lun);
+  _tmesh_config_images_tidy(config);
+}
+
+/* this sets an image's logical unit.  another image of the drive with
+   that one gets this image's: */
+void
+tmesh_config_drive_set_lun(struct tmesh_config *config,
+			   const struct tmesh_config_drive *drive, int lun)
+{
+  int lines[TMESH_CONFIG_LUNS], luns[TMESH_CONFIG_LUNS];
+  int count, i;
+
+  if (drive->tmesh_config_drive_host_line < 0) {
+    return;
+  }
+  _tmesh_config_images_fix(config, drive->tmesh_config_drive_line);
+  count = _tmesh_config_images(config, drive->tmesh_config_drive_line, lines, luns);
+  for (i = 0; i < count; i++) {
+    if (lines[i] != drive->tmesh_config_drive_host_line && luns[i] == lun) {
+      _tmesh_config_set_lun(config, lines[i], drive->tmesh_config_drive_lun);
+    }
+  }
+  _tmesh_config_set_lun(config, drive->tmesh_config_drive_host_line,
+			(lun == 0 && count <= 1 ? -1 : lun));
+}
+
+/* this sets a drive's type: */
+void
+tmesh_config_drive_set_type(struct tmesh_config *config,
+			    const struct tmesh_config_drive *drive, const char *type)
+{
+  _tmesh_config_set_arg(config, drive->tmesh_config_drive_line, "type", type);
 }
 
 /* this sets a drive's image (or with "", leaves the drive empty): */
@@ -1497,6 +1758,15 @@ void
 tmesh_config_drive_remove(struct tmesh_config *config, const struct tmesh_config_drive *drive)
 {
   int lines[3], i, j, t;
+
+  /* an image of a drive with others leaves the drive: */
+  if (drive->tmesh_config_drive_images > 1
+      && drive->tmesh_config_drive_kind != TMESH_CONFIG_DRIVE_TAPE) {
+    _tmesh_config_images_fix(config, drive->tmesh_config_drive_line);
+    tmesh_config_delete(config, drive->tmesh_config_drive_host_line);
+    _tmesh_config_images_tidy(config);
+    return;
+  }
 
   lines[0] = drive->tmesh_config_drive_line;
   lines[1] = drive->tmesh_config_drive_host_line;
@@ -1870,7 +2140,7 @@ tmesh_config_summary(const struct tmesh_config *config)
   struct tmesh_config_drive *drives;
   struct tmesh_config_net net;
   const char *display;
-  char text[2000], *p;
+  char text[2000], lun[16], *p;
   int *ram, n_ram, mb, i, count;
 
   p = text;
@@ -1890,13 +2160,18 @@ tmesh_config_summary(const struct tmesh_config *config)
 
   count = tmesh_config_drives(config, &drives);
   for (i = 0; i < count; i++) {
-    p += snprintf(p, 200, "%s, SCSI ID %d: %.120s\n",
+    lun[0] = '\0';
+    if (drives[i].tmesh_config_drive_images > 1) {
+      snprintf(lun, sizeof(lun), " LUN %d", drives[i].tmesh_config_drive_lun);
+    }
+    p += snprintf(p, 200, "%s, SCSI ID %d%s: %.120s\n",
 		  (drives[i].tmesh_config_drive_kind == TMESH_CONFIG_DRIVE_DISK
 		   ? "Disk"
 		   : drives[i].tmesh_config_drive_kind == TMESH_CONFIG_DRIVE_CDROM
 		   ? "CD-ROM"
 		   : "Tape"),
 		  drives[i].tmesh_config_drive_id,
+		  lun,
 		  (*drives[i].tmesh_config_drive_file != '\0'
 		   ? drives[i].tmesh_config_drive_file
 		   : "(empty)"));

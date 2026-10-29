@@ -101,6 +101,7 @@ static const char *_tmesh_window_pages[N_PAGES] = {
 static const char *_tmesh_window_drive_kinds[] = { "Disk", "CD-ROM", "Tape" };
 
 static const char *_tmesh_window_ids[] = { "0", "1", "2", "3", "4", "5", "6" };
+static const char *_tmesh_window_luns[] = { "0", "1", "2", "3", "4", "5", "6", "7" };
 
 static const char *_tmesh_window_idle_types[] = {
   "none", "netbsd32-type-0", "netbsd32-type-1", "sunos32-type-0"
@@ -1747,8 +1748,8 @@ _tmesh_window_page_drives(void)
   const char * const *types;
   const char *text;
   char label[100], value[32];
-  int count, n_types, i, sel, kind, removed;
-  int dw[6] = { CH(10), CH(6), CH(5), CH(14), -CH(10), -1 };
+  int count, n_types, n_luns, i, sel, kind, removed;
+  int dw[8] = { CH(10), CH(3), CH(5), CH(4), CH(5), CH(14), -CH(10), -1 };
   int fw[4] = { CH(10), -CH(21), CH(10), -1 };
   int sw[4] = { CH(10), CH(18), CH(8), -1 };
   int aw[3] = { CH(14), CH(14), CH(14) };
@@ -1760,7 +1761,9 @@ _tmesh_window_page_drives(void)
   removed = FALSE;
   _tmesh_window_row(1, full);
   mu_text(ctx, "The SCSI drives.  A disk image that doesn't exist yet is made, empty, "
-	  "when the machine is saved.  CD-ROMs and tapes can also be changed "
+	  "when the machine is saved.  Disks with the same ID are the logical "
+	  "units (LUNs) of one drive, like the two disks of an ACB-4000.  "
+	  "CD-ROMs and tapes can also be changed "
 	  "from the Media menu while the machine runs.");
   for (i = 0; i < count && !removed; i++) {
     drive = &drives[i];
@@ -1769,13 +1772,32 @@ _tmesh_window_page_drives(void)
     _tmesh_window_row(1, full);
     mu_label(ctx, "");
 
-    /* the kind, SCSI ID and type: */
-    _tmesh_window_row(6, dw);
+    /* the kind, SCSI ID, a disk's LUN, and the type: */
+    _tmesh_window_row(8, dw);
     mu_label(ctx, _tmesh_window_drive_kinds[kind]);
     mu_label(ctx, "ID");
     sel = drive->tmesh_config_drive_id;
     if (_tmesh_window_dropdown("id", _tmesh_window_ids, TME_ARRAY_ELS(_tmesh_window_ids), &sel)) {
       tmesh_config_drive_set_id(config, drive, sel);
+      _tmesh_window_edits_clear();
+      mu_pop_id(ctx);
+      break;
+    }
+    if (kind == TMESH_CONFIG_DRIVE_DISK && drive->tmesh_config_drive_host_line >= 0) {
+      mu_label(ctx, "LUN");
+      n_luns = (strcmp(drive->tmesh_config_drive_type, "acb4000") == 0
+		? 2 : TME_ARRAY_ELS(_tmesh_window_luns));
+      sel = drive->tmesh_config_drive_lun;
+      if (_tmesh_window_dropdown("lun", _tmesh_window_luns, n_luns, &sel)) {
+	tmesh_config_drive_set_lun(config, drive, sel);
+	_tmesh_window_edits_clear();
+	mu_pop_id(ctx);
+	break;
+      }
+    }
+    else {
+      mu_label(ctx, "");
+      mu_label(ctx, "");
     }
     types = tmesh_config_drive_types(kind, &n_types);
     sel = -1;
