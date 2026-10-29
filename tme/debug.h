@@ -248,6 +248,25 @@ struct tme_debug_screen {
   int (*tme_debug_screen_dump) _TME_P((struct tme_debug_screen *, _tme_const char *, char **, int *, int *));
 };
 
+/* a display's keyboard, that keys can be pressed on: */
+struct tme_debug_keyboard {
+
+  /* the next keyboard: */
+  struct tme_debug_keyboard *tme_debug_keyboard_next;
+
+  /* the display's element, and its private data: */
+  struct tme_element *tme_debug_keyboard_element;
+  void *tme_debug_keyboard_private;
+
+  /* this presses or releases a keysym, returning EAGAIN if the
+     keyboard can't take more keys now: */
+  int (*tme_debug_keyboard_key) _TME_P((struct tme_debug_keyboard *, int, tme_uint32_t));
+
+  /* this returns the keysym with a name, returning ENOENT if there is
+     none: */
+  int (*tme_debug_keyboard_keysym) _TME_P((struct tme_debug_keyboard *, _tme_const char *, tme_uint32_t *));
+};
+
 /* a console that can be read and typed into: */
 struct tme_debug_console {
 
@@ -314,5 +333,7 @@ unsigned int tme_debug_regions _TME_P((struct tme_debug_region *, unsigned int))
 
 void tme_debug_screen_register _TME_P((struct tme_debug_screen *));
 struct tme_debug_screen *tme_debug_screens _TME_P((void));
+void tme_debug_keyboard_register _TME_P((struct tme_debug_keyboard *));
+struct tme_debug_keyboard *tme_debug_keyboards _TME_P((void));
 
 #endif /* !_TME_DEBUG_H */

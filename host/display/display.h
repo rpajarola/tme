@@ -143,6 +143,9 @@ struct tme_display {
   /* our keyboard buffer: */
   struct tme_keyboard_buffer *tme_display_keyboard_buffer;
 
+  /* the keyboard, for the control socket's keyboard command: */
+  struct tme_debug_keyboard tme_display_keyboard_debug;
+
   /* our keysyms hash: */
   tme_hash_t tme_display_keyboard_keysyms;
 

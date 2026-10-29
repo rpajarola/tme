@@ -208,6 +208,7 @@ tme_display_update(void *disp) {
   struct tme_screen *screen;
   struct tme_fb_connection *conn_fb;
   int width, height;
+  int was_empty;
   int rc;
   
   display = (struct tme_display *)disp;
@@ -228,7 +229,17 @@ tme_display_update(void *disp) {
 
   /* lock the mutex: */
   tme_mutex_lock(&display->tme_display_mutex);
-    
+
+  /* pass on any key releases that the keyboard buffer has held back
+     long enough: */
+  was_empty = tme_keyboard_buffer_is_empty(display->tme_display_keyboard_buffer);
+  tme_keyboard_buffer_flush(display->tme_display_keyboard_buffer,
+			    _tme_display_event_time());
+  if (was_empty
+      && !tme_keyboard_buffer_is_empty(display->tme_display_keyboard_buffer)) {
+    display->tme_display_callout_flags |= TME_DISPLAY_CALLOUT_KEYBOARD_CTRL;
+  }
+
   _tme_display_callout(display, 0);
 
   /* loop over all screens: */

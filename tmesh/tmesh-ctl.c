@@ -163,6 +163,29 @@ static struct {
 } _tmesh_ctl_log_queue[TMESH_CTL_LOG_MAX];
 static unsigned int _tmesh_ctl_log_count;
 static unsigned long _tmesh_ctl_log_dropped;
+
+/* keys waiting to be pressed and released on a display's keyboard,
+   which takes them as fast as the emulated keyboard sends them.  they
+   are pressed even after the client has gone: */
+#define TMESH_CTL_KEYS_MAX		(65536)
+struct _tmesh_ctl_key {
+  int down;
+  tme_uint32_t keysym;
+
+  /* nonzero if the next key must wait, after this release of a
+     modifier: */
+  int pause;
+};
+static struct _tmesh_ctl_key *_tmesh_ctl_keys;
+static unsigned int _tmesh_ctl_keys_head, _tmesh_ctl_keys_count;
+static struct tme_debug_keyboard *_tmesh_ctl_keys_keyboard;
+
+/* the keyboard buffer takes a modifier's release that is followed
+   within 80 milliseconds by another key as an autorepeat, and holds it
+   back, so after a modifier is released, the next key waits a little
+   longer, until this time: */
+#define TMESH_CTL_KEYS_PAUSE_USEC	(100000)
+static struct timeval _tmesh_ctl_keys_after;
 static tme_mutex_t _tmesh_ctl_log_mutex;
 
 /* this returns the time in microseconds: */
@@ -1809,6 +1832,242 @@ _TMESH_CTL_HANDLER(_tmesh_ctl_cmd_screendump)
   return (TRUE);
 }
 
+/* this presses and releases any waiting keys that the keyboard can
+   take now: */
+static void
+_tmesh_ctl_keys_send(void)
+{
+  struct tme_debug_keyboard *keyboard;
+  struct _tmesh_ctl_key *key;
+
+  struct timeval now;
+
+  keyboard = _tmesh_ctl_keys_keyboard;
+  while (_tmesh_ctl_keys_count > 0) {
+    gettimeofday(&now, NULL);
+    if (timercmp(&now, &_tmesh_ctl_keys_after, <)) {
+      break;
+    }
+    key = &_tmesh_ctl_keys[_tmesh_ctl_keys_head];
+    if ((*keyboard->tme_debug_keyboard_key)(keyboard, key->down, key->keysym) != TME_OK) {
+      break;
+    }
+    _tmesh_ctl_keys_head = (_tmesh_ctl_keys_head + 1) % TMESH_CTL_KEYS_MAX;
+    _tmesh_ctl_keys_count--;
+    if (key->pause) {
+      _tmesh_ctl_keys_after = now;
+      _tmesh_ctl_keys_after.tv_usec += TMESH_CTL_KEYS_PAUSE_USEC;
+      if (_tmesh_ctl_keys_after.tv_usec >= 1000000) {
+	_tmesh_ctl_keys_after.tv_sec++;
+	_tmesh_ctl_keys_after.tv_usec -= 1000000;
+      }
+    }
+  }
+}
+
+/* this looks up a key by its name, such as "Return" or "a": */
+static int
+_tmesh_ctl_keysym(struct tme_debug_keyboard *keyboard, const char *name, size_t len,
+		  tme_uint32_t *_keysym, struct _tmesh_ctl_error *err)
+{
+  char buf[64];
+
+  if (len == 0 || len >= sizeof(buf)) {
+    return (_tmesh_ctl_fail(err, "bad_arg", "'%.*s' isn't a key", (int) len, name));
+  }
+  memcpy(buf, name, len);
+  buf[len] = '\0';
+  if ((*keyboard->tme_debug_keyboard_keysym)(keyboard, buf, _keysym) != TME_OK) {
+    return (_tmesh_ctl_fail(err, "bad_arg", "no key '%s' (keys are named as X11 keysyms without the XK_, such as \"Return\", \"F1\", \"Control_L\" or \"a\")", buf));
+  }
+  return (TRUE);
+}
+
+/* this adds the keysyms of a character to keys, as the presses and
+   releases that type it, returning how many there are: */
+static int
+_tmesh_ctl_char_keys(struct tme_debug_keyboard *keyboard, tme_uint32_t c,
+		     struct _tmesh_ctl_key *keys, struct _tmesh_ctl_error *err)
+{
+  static const struct {
+    tme_uint32_t c;
+    const char *name;
+  } specials[] = {
+    { '\r', "Return" }, { '\n', "Return" }, { '\t', "Tab" },
+    { '\b', "BackSpace" }, { 0x1b, "Escape" }, { 0x7f, "Delete" },
+  };
+  tme_uint32_t keysym, control, shift;
+  unsigned int i;
+  const char *name;
+
+  for (i = 0; i < TME_ARRAY_ELS(specials); i++) {
+    if (specials[i].c == c) {
+      name = specials[i].name;
+      if (!_tmesh_ctl_keysym(keyboard, name, strlen(name), &keysym, err)) {
+	return (-1);
+      }
+      keys[0].down = TRUE;  keys[0].keysym = keysym;  keys[0].pause = FALSE;
+      keys[1].down = FALSE; keys[1].keysym = keysym;  keys[1].pause = FALSE;
+      return (2);
+    }
+  }
+
+  /* other control characters are Control and a letter: */
+  if (c >= 1 && c <= 26) {
+    if (!_tmesh_ctl_keysym(keyboard, "Control_L", 9, &control, err)) {
+      return (-1);
+    }
+    keys[0].down = TRUE;  keys[0].keysym = control;      keys[0].pause = FALSE;
+    keys[1].down = TRUE;  keys[1].keysym = 'a' + c - 1;  keys[1].pause = FALSE;
+    keys[2].down = FALSE; keys[2].keysym = 'a' + c - 1;  keys[2].pause = FALSE;
+    keys[3].down = FALSE; keys[3].keysym = control;      keys[3].pause = TRUE;
+    return (4);
+  }
+
+  /* Latin-1 characters are their own keysyms.  those typed with Shift
+     on a US keyboard are typed with Shift held down, as the display
+     does, because the keyboard buffer would otherwise press Shift for
+     them and leave it down: */
+  if ((c >= 0x20 && c < 0x7f) || (c >= 0xa0 && c <= 0xff)) {
+    if ((c >= 'A' && c <= 'Z')
+	|| (c >= 0xc0 && c <= 0xde && c != 0xd7)
+	|| (c < 0x80 && strchr("~!@#$%^&*()_+{}|:\"<>?", (int) c) != NULL)) {
+      if (!_tmesh_ctl_keysym(keyboard, "Shift_L", 7, &shift, err)) {
+	return (-1);
+      }
+      keys[0].down = TRUE;  keys[0].keysym = shift;  keys[0].pause = FALSE;
+      keys[1].down = TRUE;  keys[1].keysym = c;      keys[1].pause = FALSE;
+      keys[2].down = FALSE; keys[2].keysym = c;      keys[2].pause = FALSE;
+      keys[3].down = FALSE; keys[3].keysym = shift;  keys[3].pause = TRUE;
+      return (4);
+    }
+    keys[0].down = TRUE;  keys[0].keysym = c;  keys[0].pause = FALSE;
+    keys[1].down = FALSE; keys[1].keysym = c;  keys[1].pause = FALSE;
+    return (2);
+  }
+  _tmesh_ctl_fail(err, "bad_arg", "can't type the character U+%04X; use 'keys'", (unsigned int) c);
+  return (-1);
+}
+
+/* keyboard types text, or presses keys, on a display's keyboard: */
+_TMESH_CTL_HANDLER(_tmesh_ctl_cmd_keyboard)
+{
+  cJSON *text, *keys, *k;
+  struct tme_debug_keyboard *keyboard;
+  struct _tmesh_ctl_key *new_keys, *key;
+  unsigned int count, max, i;
+  const unsigned char *p;
+  const char *name, *plus;
+  tme_uint32_t c, keysym;
+  int n, extra;
+
+  text = cJSON_GetObjectItemCaseSensitive(req, "text");
+  keys = cJSON_GetObjectItemCaseSensitive(req, "keys");
+  if ((text == NULL) == (keys == NULL)) {
+    return (_tmesh_ctl_fail(err, "bad_arg", "give 'text' or 'keys'"));
+  }
+  if (text != NULL && !cJSON_IsString(text)) {
+    return (_tmesh_ctl_fail(err, "bad_arg", "'text' should be a string"));
+  }
+  if (keys != NULL && !cJSON_IsArray(keys)) {
+    return (_tmesh_ctl_fail(err, "bad_arg", "'keys' should be a list of keys, such as [\"Return\", \"L1+a\"]"));
+  }
+  keyboard = tme_debug_keyboards();
+  if (keyboard == NULL) {
+    return (_tmesh_ctl_fail(err, "no_such_keyboard", "there is no keyboard (a keyboard is connected to a display, e.g. tme/host/sdl/display)"));
+  }
+
+  /* make the presses and releases.  a character takes at most four,
+     and a key at most two for each of its names: */
+  max = (text != NULL
+	 ? 4 * strlen(text->valuestring)
+	 : 0);
+  if (keys != NULL) {
+    cJSON_ArrayForEach(k, keys) {
+      if (!cJSON_IsString(k)) {
+	return (_tmesh_ctl_fail(err, "bad_arg", "'keys' should be a list of keys, such as [\"Return\", \"L1+a\"]"));
+      }
+      max += 2 * (strlen(k->valuestring) + 1);
+    }
+  }
+  new_keys = tme_new(struct _tmesh_ctl_key, max + 1);
+  count = 0;
+  if (text != NULL) {
+    for (p = (const unsigned char *) text->valuestring; *p != '\0'; ) {
+
+      /* decode a UTF-8 character: */
+      c = *(p++);
+      extra = (c >= 0xf0 ? 3 : c >= 0xe0 ? 2 : c >= 0xc0 ? 1 : 0);
+      if (extra > 0) {
+	c &= (0x3f >> extra);
+      }
+      for (; extra > 0 && (*p & 0xc0) == 0x80; extra--) {
+	c = (c << 6) | (*(p++) & 0x3f);
+      }
+      n = _tmesh_ctl_char_keys(keyboard, c, new_keys + count, err);
+      if (n < 0) {
+	tme_free(new_keys);
+	return (FALSE);
+      }
+      count += n;
+    }
+  }
+  else {
+
+    /* each key is pressed, with any keys before it joined by '+'
+       held down, and they are released in the opposite order: */
+    cJSON_ArrayForEach(k, keys) {
+      i = count;
+      for (name = k->valuestring; ; name = plus + 1) {
+	plus = strchr(name, '+');
+	if (plus == name) {
+	  plus = strchr(name + 1, '+');
+	}
+	if (!_tmesh_ctl_keysym(keyboard, name, (plus != NULL ? (size_t) (plus - name) : strlen(name)), &keysym, err)) {
+	  tme_free(new_keys);
+	  return (FALSE);
+	}
+	new_keys[count].down = TRUE;
+	new_keys[count].keysym = keysym;
+	new_keys[count].pause = FALSE;
+	count++;
+	if (plus == NULL) {
+	  break;
+	}
+      }
+      for (n = count - 1; n >= (int) i; n--) {
+	new_keys[count].down = FALSE;
+	new_keys[count].keysym = new_keys[n].keysym;
+	new_keys[count].pause = FALSE;
+	count++;
+      }
+
+      /* a key may be a modifier, or have been pressed with some: */
+      new_keys[count - 1].pause = TRUE;
+    }
+  }
+
+  if (_tmesh_ctl_keys_count + count > TMESH_CTL_KEYS_MAX) {
+    tme_free(new_keys);
+    return (_tmesh_ctl_fail(err, "bad_arg", "too many keys are waiting to be typed; wait and try again"));
+  }
+  if (_tmesh_ctl_keys == NULL) {
+    _tmesh_ctl_keys = tme_new(struct _tmesh_ctl_key, TMESH_CTL_KEYS_MAX);
+  }
+  _tmesh_ctl_keys_keyboard = keyboard;
+  for (i = 0; i < count; i++) {
+    key = &_tmesh_ctl_keys[(_tmesh_ctl_keys_head + _tmesh_ctl_keys_count) % TMESH_CTL_KEYS_MAX];
+    *key = new_keys[i];
+    _tmesh_ctl_keys_count++;
+  }
+  tme_free(new_keys);
+  _tmesh_ctl_keys_send();
+
+  cJSON_AddNumberToObject(result, "queued", count);
+  cJSON_AddNumberToObject(result, "waiting", _tmesh_ctl_keys_count);
+  return (TRUE);
+}
+
 /* events as they happen: */
 
 _TMESH_CTL_HANDLER(_tmesh_ctl_cmd_subscribe)
@@ -1906,6 +2165,7 @@ static const struct {
   { "devices", _tmesh_ctl_cmd_devices, "" },
   { "subscribe", _tmesh_ctl_cmd_subscribe, "console log" },
   { "screendump", _tmesh_ctl_cmd_screendump, "file screen" },
+  { "keyboard", _tmesh_ctl_cmd_keyboard, "text keys" },
   { NULL, NULL, NULL }
 };
 
@@ -2158,6 +2418,7 @@ _tmesh_ctl_th(void *unused)
     _tmesh_ctl_read();
     _tmesh_ctl_stop_handle();
     _tmesh_ctl_subs_send();
+    _tmesh_ctl_keys_send();
 
     /* wait for a request, or a few milliseconds.  with cooperative
        threads, an event set that is waited on belongs to the threads
@@ -2421,6 +2682,7 @@ tmesh_ctl_client(int argc, char **argv)
     { "watch_del", "watch", TRUE },
     { "trace_read", "since", TRUE },
     { "screendump", "file", FALSE },
+    { "keyboard", "text", FALSE },
     { NULL, NULL, FALSE }
   };
   const char *spec, *cmd, *arg;

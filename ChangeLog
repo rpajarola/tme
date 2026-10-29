@@ -1,6 +1,30 @@
 2026-10-29  Rico Pajarola  <rp@servium.ch>
 
 	* tmesh/tmesh-ctl.c, tme/tme.texi: Added the control socket's
+	keyboard command, which types text, or presses keys, on a
+	display's keyboard.
+
+	* tme/debug.h, libtme/debug.c (tme_debug_keyboard_register,
+	tme_debug_keyboards): A registry of keyboards that keys can be
+	pressed on.
+
+	* host/display/display-keyboard.c: The display's keyboard
+	registers itself when it connects.
+
+	* generic/keyboard.c, tme/generic/keyboard.h
+	(tme_keyboard_buffer_flush): Passes on the releases that the
+	keymode stages hold back, once they are old enough.  Before, a
+	modifier's release waited for the next key, so Shift could seem
+	to stay pressed.
+
+	* host/display/display.c (tme_display_update): Flushes the
+	keyboard buffer.
+
+	* host/display/sdl/sdl-display.c: With SDL's dummy or offscreen
+	video driver, the framebuffer isn't halved to fit a screen that
+	isn't there, so screenshots are at full detail.
+
+	* tmesh/tmesh-ctl.c, tme/tme.texi: Added the control socket's
 	screendump command, which saves a screen as a PNG file.
 
 	* tme/debug.h, libtme/debug.c (tme_debug_screen_register,

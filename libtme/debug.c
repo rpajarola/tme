@@ -70,6 +70,9 @@ static struct _tme_debug_bus *_tme_debug_buses;
 
 /* the screens, in the order registered: */
 static struct tme_debug_screen *_tme_debug_screens;
+
+/* the keyboards, in the order registered: */
+static struct tme_debug_keyboard *_tme_debug_keyboards;
 static struct _tme_debug_cycle *_tme_debug_cycles;
 static unsigned int _tme_debug_cycles_count;
 
@@ -683,6 +686,25 @@ struct tme_debug_screen *
 tme_debug_screens(void)
 {
   return (_tme_debug_screens);
+}
+
+/* this registers a keyboard, whose keys can then be pressed: */
+void
+tme_debug_keyboard_register(struct tme_debug_keyboard *keyboard)
+{
+  struct tme_debug_keyboard **_prev;
+
+  _tme_debug_init();
+  for (_prev = &_tme_debug_keyboards; *_prev != NULL; _prev = &(*_prev)->tme_debug_keyboard_next);
+  keyboard->tme_debug_keyboard_next = NULL;
+  *_prev = keyboard;
+}
+
+/* this returns the first keyboard: */
+struct tme_debug_keyboard *
+tme_debug_keyboards(void)
+{
+  return (_tme_debug_keyboards);
 }
 
 /* this registers a bus, whose devices are then listed, and watched: */

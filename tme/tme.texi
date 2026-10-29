@@ -1202,8 +1202,8 @@ The control socket lets programs (scripts, test harnesses, AI agents)
 drive tmesh: stop and continue the CPU, single-step it, set
 breakpoints, read and write its registers and memory, watch for CPU
 exceptions and for accesses to devices, read what the guest writes to
-a serial console and type into it, save the screen as an image, and
-run any tmesh command.
+a serial console and type into it, save the screen as an image, type
+on the keyboard of a display, and run any tmesh command.
 Requests, responses and events are lines of JSON.  The protocol is
 based on that of GXemul's control socket.
 
@@ -1267,6 +1267,7 @@ parameters, or a plain value for: @code{raw} (@code{line}),
 @code{mem_read} (@code{addr}),
 @code{break_del} (@code{bp}), @code{watch_del} (@code{watch}),
 @code{trace_read} (@code{since}), @code{screendump} (@code{file}),
+@code{keyboard} (@code{text}),
 @code{console_read} (@code{since}),
 @code{console_write} (@code{data}), and @code{run_until} (a console
 pattern).
@@ -1333,7 +1334,8 @@ exactly, but without the instructions in recompiled code.
 The error codes are @code{bad_request}, @code{unknown_cmd},
 @code{bad_arg}, @code{not_stopped}, @code{no_such_cpu},
 @code{no_such_console}, @code{no_such_breakpoint}, @code{no_such_watch},
-@code{no_such_device}, @code{no_such_screen}, @code{mem_fault}
+@code{no_such_device}, @code{no_such_screen}, @code{no_such_keyboard},
+@code{mem_fault}
 (nothing could be read or written at the address),
 @code{capture_failed} (the screen shows nothing yet), @code{io_error}
 (a file could not be written) and @code{busy}.
@@ -1496,6 +1498,30 @@ the SDL display with SDL's dummy video driver:
 $ SDL_VIDEODRIVER=dummy tmesh --control unix:/tmp/tme.sock -c tme.cfg &
 $ tmesh --ctl unix:/tmp/tme.sock screendump /tmp/screen.png
 @{"id":1,"ok":true,"result":@{"file":"/tmp/screen.png","screen":0,"name":"bwtwo0","width":1152,"height":900@},"ninstrs":935114400@}
+@end example
+
+@item keyboard
+Types on the keyboard of a display (such as a Sun keyboard connected
+to @code{tme/host/sdl/display}), as if from the host's keyboard:
+either the characters of @code{text}, or the @code{keys}.  In
+@code{text}, a Latin-1 character is typed with Shift if it needs it on
+a US keyboard, @code{"\r"} and @code{"\n"} are Return, @code{"\t"}
+Tab, @code{"\b"} BackSpace, @code{"\u001b"} Escape, and other control
+characters are Control and a letter.  @code{keys} is a list of keys
+named as X11 keysyms (@code{"Return"}, @code{"F1"}, @code{"a"},
+@code{"space"}, @code{"Control_L"}, @dots{}), each pressed and
+released; keys joined by @code{+} are pressed in order, held down
+together, and released, such as @code{"Shift_L+a"}, or @code{"L1+a"}
+for a Sun keyboard's Stop-A.  The keyboard's macros and map then apply
+as for the host's keys.  The keys are pressed as fast as the emulated
+keyboard sends them, also after the client has gone; the result tells
+how many presses and releases were @code{queued} and how many are
+still @code{waiting}.
+
+@example
+$ tmesh --ctl unix:/tmp/tme.sock keyboard 'b sd()'
+$ tmesh --ctl unix:/tmp/tme.sock keyboard '@{"keys":["Return"]@}'
+$ tmesh --ctl unix:/tmp/tme.sock keyboard '@{"keys":["L1+a"]@}'
 @end example
 
 @item subscribe

@@ -2738,6 +2738,37 @@ tme_keyboard_buffer_copyin(struct tme_keyboard_buffer *_buffer,
   return (_tme_keyboard_buffer_in0(buffer, event));
 }
 
+/* this passes on any releases that the keymode stages have been
+   holding back, to tell a genuine release from an autorepeat, once
+   enough time has passed since them.  the stages otherwise only do
+   that when the next event comes, so a key could seem to stay pressed
+   until then: */
+int
+tme_keyboard_buffer_flush(struct tme_keyboard_buffer *_buffer,
+			  tme_uint32_t event_time)
+{
+  struct tme_keyboard_buffer_int *buffer;
+  int rc;
+
+  /* recover our data structure: */
+  buffer = (struct tme_keyboard_buffer_int *) _buffer;
+
+  if (event_time == TME_KEYBOARD_EVENT_TIME_UNDEF) {
+    return (TME_OK);
+  }
+
+  /* a stage called without a key only passes on old releases: */
+  rc = _tme_keymode_stage(buffer,
+			  &buffer->tme_keyboard_buffer_int_in1_keymode_stage,
+			  NULL, FALSE, event_time);
+  if (rc == TME_OK) {
+    rc = _tme_keymode_stage(buffer,
+			    &buffer->tme_keyboard_buffer_int_out1_keymode_stage,
+			    NULL, FALSE, event_time);
+  }
+  return (rc);
+}
+
 /* this copies a keyval out of a keyboard buffer: */
 int
 tme_keyboard_buffer_copyout(struct tme_keyboard_buffer *buffer,

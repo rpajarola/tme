@@ -233,6 +233,7 @@ tme_keyboard_buffer_out_modifiers _TME_P((struct tme_keyboard_buffer *,
 					  tme_keyboard_modifiers_t));
 int tme_keyboard_buffer_copyin _TME_P((struct tme_keyboard_buffer *,
 				       _tme_const struct tme_keyboard_event *));
+int tme_keyboard_buffer_flush _TME_P((struct tme_keyboard_buffer *, tme_uint32_t));
 int tme_keyboard_buffer_copyout _TME_P((struct tme_keyboard_buffer *,
 					struct tme_keyboard_event *));
 int tme_keyboard_parse_macro _TME_P((_tme_const char *,

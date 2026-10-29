@@ -947,6 +947,7 @@ _tme_sdl_screen_new(struct tme_display *_display,
 TME_ELEMENT_SUB_NEW_DECL(tme_host_sdl,display) {
   struct tme_sdl_display *display;
   SDL_Rect bounds;
+  const char *driver;
   unsigned int scancode;
 
   /* we take no arguments: */
@@ -994,8 +995,16 @@ TME_ELEMENT_SUB_NEW_DECL(tme_host_sdl,display) {
   }
   tme_display_init(element, &display->display);
 
-  /* the size of the screen, for picking the default scaling: */
-  if (SDL_GetDisplayUsableBounds(0, &bounds) == 0
+  /* the size of the screen, for picking the default scaling.  SDL's
+     dummy and offscreen video drivers, for running without windows,
+     have no real screen, and a small one would halve the framebuffer
+     and so its screenshots, so they keep the default: */
+  driver = SDL_GetCurrentVideoDriver();
+  if (driver != NULL
+      && (strcmp(driver, "dummy") == 0
+	  || strcmp(driver, "offscreen") == 0)) {
+  }
+  else if (SDL_GetDisplayUsableBounds(0, &bounds) == 0
       && bounds.w > 0
       && bounds.h > 0) {
     display->display.tme_screen_width = bounds.w;

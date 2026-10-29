@@ -228,13 +228,24 @@ _tme_keyboard_keyval_name(tme_keyboard_keyval_t keyval)
 }
 #endif
 
+static int _tme_keyboard_key_press_display _TME_P((int, tme_keyboard_keyval_t, struct tme_display *));
+
 /* this is a generic callback for a key press or release event, for
    a display that doesn't have the modifiers mask: */
 int
 _tme_keyboard_key_press(int down, tme_keyboard_keyval_t key, void *disp)
 {
+  return (_tme_keyboard_key_press_display(down, key,
+					  ((_tme_display_get)
+					   ? (_tme_display_get(disp))
+					   : (struct tme_display *) disp)));
+}
+
+/* this is a key press or release event on a display: */
+static int
+_tme_keyboard_key_press_display(int down, tme_keyboard_keyval_t key, struct tme_display *display)
+{
   struct tme_keyboard_event tme_event;
-  struct tme_display *display = (_tme_display_get) ? (_tme_display_get(disp)) : (disp);
   tme_keyboard_modifiers_t modifiers;
   int modifier, pressed;
 
@@ -568,6 +579,42 @@ _tme_keyboard_read(struct tme_keyboard_connection *conn_keyboard,
   return (rc);
 }
 
+/* this presses or releases a key for the control socket, unless the
+   keyboard buffer is a quarter full, so that it never overflows: */
+static int
+_tme_keyboard_debug_key(struct tme_debug_keyboard *keyboard, int down, tme_uint32_t keysym)
+{
+  struct tme_display *display;
+  struct tme_keyboard_buffer *buffer;
+  unsigned int used;
+
+  display = (struct tme_display *) keyboard->tme_debug_keyboard_private;
+  buffer = display->tme_display_keyboard_buffer;
+  tme_mutex_lock(&display->tme_display_mutex);
+  used = ((buffer->tme_keyboard_buffer_head - buffer->tme_keyboard_buffer_tail)
+	  & (buffer->tme_keyboard_buffer_size - 1));
+  tme_mutex_unlock(&display->tme_display_mutex);
+  if (used >= buffer->tme_keyboard_buffer_size / 4) {
+    return (EAGAIN);
+  }
+  _tme_keyboard_key_press_display(down, keysym, display);
+  return (TME_OK);
+}
+
+/* this returns the keysym with a name, for the control socket: */
+static int
+_tme_keyboard_debug_keysym(struct tme_debug_keyboard *keyboard, const char *name, tme_uint32_t *_keysym)
+{
+  tme_keyboard_keyval_t keysym;
+
+  keysym = _tme_keysym_from_name(name);
+  if (keysym == TME_KEYSYM_VOID) {
+    return (ENOENT);
+  }
+  *_keysym = keysym;
+  return (TME_OK);
+}
+
 /* this breaks a keyboard connection: */
 static int
 _tme_keyboard_connection_break(struct tme_connection *conn, unsigned int state)
@@ -601,6 +648,13 @@ _tme_keyboard_connection_make(struct tme_connection *conn,
     display->tme_display_keyboard_connection
       = (struct tme_keyboard_connection *) conn->tme_connection_other;
     tme_mutex_unlock(&display->tme_display_mutex);
+
+    /* keys can be pressed through the control socket: */
+    display->tme_display_keyboard_debug.tme_debug_keyboard_element = conn->tme_connection_element;
+    display->tme_display_keyboard_debug.tme_debug_keyboard_private = display;
+    display->tme_display_keyboard_debug.tme_debug_keyboard_key = _tme_keyboard_debug_key;
+    display->tme_display_keyboard_debug.tme_debug_keyboard_keysym = _tme_keyboard_debug_keysym;
+    tme_debug_keyboard_register(&display->tme_display_keyboard_debug);
   }
 
   return (TME_OK);
