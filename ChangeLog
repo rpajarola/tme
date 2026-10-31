@@ -1,5 +1,9 @@
 2026-10-30  Rico Pajarola  <rp@servium.ch>
 
+	* Release 1.2.4.
+
+	* configure.ac: Bumped version to 1.2.4.
+
 	* host/display/rfb/rfb-display.c: The VNC display is a VNC server
 	of its own, instead of using libvncserver, so it's always built:
 	tme/host/rfb/display [ port PORT ] [ address ADDRESS ] | [ socket
