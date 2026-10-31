@@ -832,7 +832,8 @@ do_usage(const char *prog_name, char *msg)
                    \n--log LOGFILE          log to LOGFILE		\
                    \n-c, --noninteractive   read no commands from standard input (<INITIAL-CONFIG> required here)\
                    \n--control unix:PATH|tcp:PORT  listen for requests from programs; send them with\
-                   \n                       %s --ctl unix:PATH|tcp:PORT COMMAND [ARGUMENT]\n", prog_name, prog_name);
+                   \n                       %s --ctl unix:PATH|tcp:PORT COMMAND [ARGUMENT];\
+                   \n                       for AI agents, %s --mcp unix:PATH|tcp:PORT is an MCP server using it\n", prog_name, prog_name, prog_name);
 #ifdef TMESH_WINDOW
   fprintf(stderr,
 	  "--edit [SCRIPT]        open the machine window (on SCRIPT's machine, or a new one there)\n"
@@ -965,6 +966,11 @@ main(int argc, char **argv)
   /* tmesh --ctl ...: a control socket client: */
   if (argc >= 2 && !strcmp(argv[1], "--ctl")) {
     return (tmesh_ctl_client(argc, argv));
+  }
+
+  /* tmesh --mcp ...: an MCP server for AI agents: */
+  if (argc >= 2 && !strcmp(argv[1], "--mcp")) {
+    return (tmesh_mcp(argc, argv));
   }
   for (arg_i = 1;
        (arg_i < argc

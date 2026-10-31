@@ -39,4 +39,14 @@ void tmesh_ctl_log _TME_P((_tme_const char *, unsigned long, int, _tme_const cha
 /* this is tmesh --ctl, a client sending one request: */
 int tmesh_ctl_client _TME_P((int, char **));
 
+/* for clients (tmesh --ctl, and the MCP server in tmesh-mcp.c): */
+struct timeval;
+int tmesh_ctl_command _TME_P((int, _tme_const char **, _tme_const char **));
+int tmesh_ctl_client_connect _TME_P((_tme_const char *));
+char *tmesh_ctl_client_readline _TME_P((int, char **, size_t *, _tme_const struct timeval *, int *));
+int tmesh_ctl_send_all _TME_P((int, _tme_const char *, size_t));
+
+/* this is tmesh --mcp, an MCP server using a control socket: */
+int tmesh_mcp _TME_P((int, char **));
+
 #endif /* !_TMESH_CTL_H */

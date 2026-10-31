@@ -14,6 +14,7 @@ libtmesh_la_SOURCES = \
 	tmesh-threads.c \
 	tmesh-ctl.h \
 	tmesh-ctl.c \
+	tmesh-mcp.c \
 	cJSON.h \
 	cJSON.c
 libtmesh_la_LIBADD = $(top_builddir)/libtme/libtme.la

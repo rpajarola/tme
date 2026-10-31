@@ -1,5 +1,23 @@
 2026-10-30  Rico Pajarola  <rp@servium.ch>
 
+	* tmesh/tmesh-mcp.c, tmesh/tmesh.c, tmesh/Makefile.am: Added
+	tmesh --mcp unix:PATH|tcp:PORT, an MCP server for AI agents such
+	as Claude Code, which turns tool calls into requests on the
+	control socket, one connection per call.  The tools are the
+	control socket's commands; status includes hello, pause, step
+	and run_until (and continue, with wait) wait for the machine to
+	stop, a wait tool waits for a stop, screendump returns the screen
+	as an image, and console_write and keyboard can press Return
+	(enter).
+
+	* tmesh/tmesh-ctl.c, tmesh/tmesh-ctl.h (tmesh_ctl_command,
+	tmesh_ctl_client_connect, tmesh_ctl_client_readline,
+	tmesh_ctl_send_all): Exported for the MCP server.
+
+	* tme/tme.texi: Documented the MCP server.
+
+2026-10-30  Rico Pajarola  <rp@servium.ch>
+
 	* Release 1.2.4.
 
 	* configure.ac: Bumped version to 1.2.4.

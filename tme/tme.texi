@@ -1290,6 +1290,7 @@ memory can't be read yet.
 
 @menu
 * Control Client::
+* MCP Server::
 * Control Protocol::
 * Control Commands::
 @end menu
@@ -1338,6 +1339,62 @@ are seen by no one; @code{status} tells how the machine last stopped,
 and console output and the trace are kept until read.  A program that
 wants events as they happen (@code{subscribe}) keeps one connection
 open.
+
+@node MCP Server
+@subsection MCP Server
+@cindex MCP
+
+@command{tmesh --mcp @var{socket}} is an MCP (Model Context Protocol)
+server: it lets an AI agent such as Claude Code use the control socket
+as tools, without a shell command for each step.  It speaks MCP on its
+standard input and output, and uses the control socket of a tmesh
+started with @option{--control @var{socket}}:
+
+@example
+$ tmesh --control unix:/tmp/tme.sock -c tme.cfg &
+$ claude mcp add tme -- tmesh --mcp unix:/tmp/tme.sock
+@end example
+
+Each tool call is a connection of its own, so tmesh can be started
+(or restarted) before or after the agent, and @command{tmesh --ctl}
+works too, between the calls.  The tools are the commands
+(@pxref{Control Commands}), with the same parameters, except:
+
+@itemize @bullet
+@item
+@code{status} also has what @code{hello} returns: the version, the CPUs
+(with their names and models), and the consoles.
+
+@item
+@code{pause}, @code{step} and @code{run_until} wait for the machine to
+stop, and return the @code{stopped} event as @code{stopped}; so does
+@code{continue}, if given @code{wait}.  @code{wait} is how many
+seconds to wait (by default 10 for @code{pause}, 30 for @code{step},
+60 for @code{run_until}, or longer than its @code{timeout_ms}, and 0
+for @code{continue}).  If the machine is still running then, the
+result has @code{"running": true}, and the machine keeps running.
+
+@item
+The @code{wait} tool waits (up to @code{wait} seconds, default 60) for
+the running machine to stop.
+
+@item
+@code{screendump} returns the screen as an image.  With @code{file},
+it is also kept as that file.
+
+@item
+@code{console_write} and @code{keyboard} also take @code{enter}:
+@code{true} presses Return after the @code{data}, @code{text} or
+@code{keys}.  Text is typed as it is, so @code{\r} written as a
+backslash and an @code{r} types those two characters.
+
+@item
+There is no @code{subscribe}, since there is no connection to send
+events to between calls.
+@end itemize
+
+Every result has @code{ninstrs}.  A failed request is a tool error,
+with the error's code and message.
 
 @node Control Protocol
 @subsection Control Protocol

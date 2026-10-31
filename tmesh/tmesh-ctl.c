@@ -451,8 +451,8 @@ _tmesh_ctl_disconnect(void)
   _tmesh_ctl_sub_log = FALSE;
 }
 
-static int
-_tmesh_ctl_send_all(int fd, const char *buf, size_t len)
+int
+tmesh_ctl_send_all(int fd, const char *buf, size_t len)
 {
   ssize_t rc;
   int flags;
@@ -491,7 +491,7 @@ _tmesh_ctl_send(cJSON *msg)
       s = realloc(s, len + 2);
       s[len] = '\n';
       s[len + 1] = '\0';
-      if (!_tmesh_ctl_send_all(_tmesh_ctl_client_fd, s, len + 1)) {
+      if (!tmesh_ctl_send_all(_tmesh_ctl_client_fd, s, len + 1)) {
 	_tmesh_ctl_disconnect();
       }
       free(s);
@@ -2169,6 +2169,20 @@ static const struct {
   { NULL, NULL, NULL }
 };
 
+/* this gives the name and parameters of the i'th command, for the MCP
+   server, returning FALSE after the last one: */
+int
+tmesh_ctl_command(int cmd_i, const char **_name, const char **_params)
+{
+  if (cmd_i < 0
+      || cmd_i >= (int) (sizeof(_tmesh_ctl_cmds) / sizeof(_tmesh_ctl_cmds[0])) - 1) {
+    return (FALSE);
+  }
+  *_name = _tmesh_ctl_cmds[cmd_i].name;
+  *_params = _tmesh_ctl_cmds[cmd_i].params;
+  return (TRUE);
+}
+
 /* this returns nonzero if a word is in a list of words: */
 static int
 _tmesh_ctl_word_in(const char *word, const char *words)
@@ -2332,7 +2346,7 @@ _tmesh_ctl_accept(void)
     /* one client at a time: */
     if (_tmesh_ctl_client_fd >= 0) {
       busy = "{\"ok\":false,\"error\":{\"code\":\"busy\",\"message\":\"another client is connected\"}}\n";
-      (void) _tmesh_ctl_send_all(fd, busy, strlen(busy));
+      (void) tmesh_ctl_send_all(fd, busy, strlen(busy));
       close(fd);
       continue;
     }
@@ -2569,8 +2583,8 @@ _tmesh_ctl_client_usage(void)
   return (2);
 }
 
-static int
-_tmesh_ctl_client_connect(const char *spec)
+int
+tmesh_ctl_client_connect(const char *spec)
 {
   struct sockaddr_in sin;
   struct sockaddr_un sun;
@@ -2611,8 +2625,8 @@ _tmesh_ctl_client_connect(const char *spec)
 /* this reads one line into a malloced string, returning NULL on EOF or
    error, and setting *_timed_out if the deadline (if any) passed
    first: */
-static char *
-_tmesh_ctl_client_readline(int fd, char **_buf, size_t *_len, const struct timeval *deadline, int *_timed_out)
+char *
+tmesh_ctl_client_readline(int fd, char **_buf, size_t *_len, const struct timeval *deadline, int *_timed_out)
 {
   char tmp[4096];
   char *nl, *line;
@@ -2775,7 +2789,7 @@ tmesh_ctl_client(int argc, char **argv)
     cJSON_AddNumberToObject(req, "id", 1);
   }
 
-  fd = _tmesh_ctl_client_connect(spec);
+  fd = tmesh_ctl_client_connect(spec);
   if (fd < 0) {
     fprintf(stderr, "%s --ctl: can't connect to %s\n", argv0, spec);
     cJSON_Delete(req);
@@ -2787,7 +2801,7 @@ tmesh_ctl_client(int argc, char **argv)
   reqstr = realloc(reqstr, reqlen + 2);
   reqstr[reqlen] = '\n';
   reqstr[reqlen + 1] = '\0';
-  if (!_tmesh_ctl_send_all(fd, reqstr, reqlen + 1)) {
+  if (!tmesh_ctl_send_all(fd, reqstr, reqlen + 1)) {
     fprintf(stderr, "%s --ctl: can't send to %s\n", argv0, spec);
     close(fd);
     return (2);
@@ -2801,7 +2815,7 @@ tmesh_ctl_client(int argc, char **argv)
   got_response = FALSE;
   wait_for_stop = FALSE;
   timed_out = FALSE;
-  while ((line = _tmesh_ctl_client_readline(fd, &buf, &buflen, have_deadline ? &deadline : NULL, &timed_out)) != NULL) {
+  while ((line = tmesh_ctl_client_readline(fd, &buf, &buflen, have_deadline ? &deadline : NULL, &timed_out)) != NULL) {
     msg = cJSON_Parse(line);
     ok = cJSON_GetObjectItemCaseSensitive(msg, "ok");
     if (ok == NULL) {
@@ -2827,7 +2841,7 @@ tmesh_ctl_client(int argc, char **argv)
   /* and with --wait, the stop: */
   if (got_response && wait_for_stop) {
     ret = 2;
-    while ((line = _tmesh_ctl_client_readline(fd, &buf, &buflen, have_deadline ? &deadline : NULL, &timed_out)) != NULL) {
+    while ((line = tmesh_ctl_client_readline(fd, &buf, &buflen, have_deadline ? &deadline : NULL, &timed_out)) != NULL) {
       msg = cJSON_Parse(line);
       ev = cJSON_GetObjectItemCaseSensitive(msg, "event");
       done = (cJSON_IsString(ev)
