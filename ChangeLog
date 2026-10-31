@@ -1,5 +1,9 @@
 2026-10-30  Rico Pajarola  <rp@servium.ch>
 
+	* Release 1.2.5.
+
+	* configure.ac: Bumped version to 1.2.5.
+
 	* tmesh/tmesh-mcp.c, tmesh/tmesh.c, tmesh/Makefile.am: Added
 	tmesh --mcp unix:PATH|tcp:PORT, an MCP server for AI agents such
 	as Claude Code, which turns tool calls into requests on the
