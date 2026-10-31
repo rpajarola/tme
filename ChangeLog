@@ -1,3 +1,20 @@
+2026-10-30  Rico Pajarola  <rp@servium.ch>
+
+	* host/display/rfb/rfb-display.c: The VNC display is a VNC server
+	of its own, instead of using libvncserver, so it's always built:
+	tme/host/rfb/display [ port PORT ] [ address ADDRESS ] | [ socket
+	PATH ] shows the first screen to VNC clients, with RFB 3.3 to
+	3.8, Raw, Zlib and ZRLE updates (whichever the client prefers),
+	the keyboard and the mouse, up to four clients, a password
+	(VNC Authentication) from TME_VNC_PASSWORD, and a protocol trace
+	with TME_VNC_DEBUG.
+
+	* configure.ac, host/display/rfb/Makefile.am: The VNC display
+	needs only zlib, if it's there.  libvncclient is still used for
+	SDLvncviewer.
+
+	* tme/tme.texi: Documented the VNC display.
+
 2026-10-29  Rico Pajarola  <rp@servium.ch>
 
 	* Release 1.2.3.

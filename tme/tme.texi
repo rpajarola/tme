@@ -309,11 +309,8 @@ SDL2 (for a GUI, but will work without if serial support
 available).  configure builds the SDL display if it finds SDL2.
 
 @item
-zlib (to compress screenshots) and ffmpeg (at run time, to record the
-screen)
-
-@item
-libvncserver (for a GUI, but will work without if serial support available)
+zlib (to compress screenshots and the VNC display's updates) and
+ffmpeg (at run time, to record the screen)
 
 @end itemize
 
@@ -559,10 +556,56 @@ needs that line changed to @samp{display0: tme/host/sdl/display}.
 
 @node VNC
 @subsection VNC
-TME supports the VNC protocol for displaying a framebuffer remotely.
-This is done by libvncserver version 0.9. You can create a remote
-framebuffer through the appropriate line in the configuration file.
-See examples in the machines directory for details.
+The VNC display shows the emulated screen to VNC clients (TigerVNC,
+Remmina, macOS's Screen Sharing, @dots{}) instead of in a window, e.g.
+to run TME on a server, or to use it from another computer.  It needs
+nothing else installed.  Use it instead of the SDL display:
+
+@example
+display0: tme/host/rfb/display
+@end example
+
+tmesh then prints where it listens, like @samp{tmesh: VNC server:
+127.0.0.1 port 5900}, and a VNC client can connect to
+@samp{localhost:5900}.  Without arguments, it listens on this computer
+only, on the first free port from 5900 up.  The arguments are:
+
+@example
+display0: tme/host/rfb/display [ port @var{port} ] [ address @var{address} ]
+display0: tme/host/rfb/display socket @var{path}
+@end example
+
+@code{port} is the TCP port.  @code{address} listens on another
+address, for clients on other computers: @code{0.0.0.0} for all of
+this computer's IPv4 addresses, or @code{"::"} (with the quotes) for
+all of its IPv4 and IPv6 addresses.  @code{socket} listens on a Unix
+socket instead.
+
+Clients need a password if the environment variable
+@env{TME_VNC_PASSWORD} is set (macOS's Screen Sharing insists on one):
+
+@example
+$ TME_VNC_PASSWORD=sesame tmesh tme.cfg
+@end example
+
+This is VNC's own password scheme, which most clients know: only the
+first 8 characters count, and while the password itself isn't sent,
+the session isn't encrypted, so over the Internet, an SSH tunnel
+(@samp{ssh -L 5900:localhost:5900 @var{server}}) to a display that
+listens on this computer only is the safer way.  After a wrong
+password, the next client waits a second.
+
+Keys typed in a VNC client go to the emulated keyboard, as in the SDL
+display, and the emulated mouse moves by as much as the client's
+pointer does (so the two pointers can drift apart).  The screen is
+shown at its own size, and the size and title follow the emulated
+framebuffer's.  Updates use the ZRLE encoding (which makes text
+screens tiny) or Zlib, whichever the client prefers, when TME was built
+with zlib, and otherwise Raw.  Up to four clients can watch at once;
+the first screen of the display is shown.  There are no menus; the
+@code{screenshot} and @code{record} commands below, and the control
+socket, work as with the SDL display.  With @env{TME_VNC_DEBUG} set,
+tmesh prints what it and the clients send each other.
 
 @node Screenshots
 @subsection Screenshots
@@ -1492,7 +1535,8 @@ the order they were connected (default 0).  Returns the @code{file}
 (its absolute path), the @code{screen}, its framebuffer's @code{name}
 (such as @code{"bwtwo0"}), and the image's @code{width} and
 @code{height}.  For a machine without windows, e.g. on a server, use
-the SDL display with SDL's dummy video driver:
+the VNC display (@pxref{VNC}), which a person can also watch, or the
+SDL display with SDL's dummy video driver:
 
 @example
 $ SDL_VIDEODRIVER=dummy tmesh --control unix:/tmp/tme.sock -c tme.cfg &

@@ -1,7 +1,8 @@
 # Builds tme on every push and pull request. On Linux, configure picks
-# the displays from the libraries installed, so each job installs only
-# those for its displays and checks that configure chose them and that
-# tmesh can load them. macOS builds with the SDL display. The packages
+# the displays from the libraries installed (the VNC display, rfb, needs
+# none), so each job installs only those for its displays and checks
+# that configure chose them and that tmesh can load them. macOS builds
+# with the SDL display. The packages
 # job builds the .deb and builds again from the make dist tarball, as
 # the release workflow does.
 name: ci
@@ -16,11 +17,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - displays: sdl
+          - displays: rfb sdl
             packages: libsdl2-dev
-          - displays: ""
+          - displays: rfb
             packages: ""
-    name: linux (${{ matrix.displays || 'no displays' }})
+    name: linux (${{ matrix.displays }})
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -48,7 +49,7 @@ jobs:
           ./configure --enable-hosts="rfb sdl tun bsd udp"
           make -j"$(sysctl -n hw.ncpu)"
       - name: Check the displays
-        run: .github/check-displays.sh sdl
+        run: .github/check-displays.sh rfb sdl
 
   packages:
     runs-on: ubuntu-24.04

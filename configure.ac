@@ -830,11 +830,18 @@ if test "x${enable_sdl}" = xno; then
    AC_MSG_WARN([SDL 2 was not found, so there will be no display for emulated screens, other than VNC (rfb)])
 fi
 
-have_rfb=no
-AS_IF([test "x${enable_rfb}" = xyes], [
-   PKG_CHECK_MODULES([RFB], [libvncclient libvncserver], [TME_DISPLAY_HOSTS="rfb ${TME_DISPLAY_HOSTS}"; have_rfb=yes], AC_DEFINE([HAVE_RFB], [0], [No RFB]))
+dnl the VNC display needs nothing more (zlib compresses its updates, if
+dnl it's there):
+if test "x${enable_rfb}" = xyes; then
+   TME_DISPLAY_HOSTS="rfb ${TME_DISPLAY_HOSTS}"
+fi
+
+dnl SDLvncviewer, a VNC client, needs libvncclient:
+have_rfb_libs=no
+AS_IF([test "x${enable_rfb}" = xyes && test "x${enable_sdl}" = xyes], [
+   PKG_CHECK_MODULES([RFB], [libvncclient libvncserver], [have_rfb_libs=yes], [:])
 ])
-AM_CONDITIONAL([HAVE_RFB_LIBS], [test "x${have_rfb}" = xyes])
+AM_CONDITIONAL([HAVE_RFB_LIBS], [test "x${have_rfb_libs}" = xyes])
 
 dnl The list of display host support is finished.
 AC_SUBST(TME_DISPLAY_HOSTS)

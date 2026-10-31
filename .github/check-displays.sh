@@ -2,8 +2,8 @@
 # Checks that configure chose exactly the displays given, and that tmesh
 # can load each of them. Run from the top of a configured and built tree:
 #
-#   .github/check-displays.sh sdl
-#   .github/check-displays.sh              # no displays
+#   .github/check-displays.sh rfb sdl
+#   .github/check-displays.sh rfb          # without SDL
 #
 # SDL uses its dummy driver here, so no window system is needed. LOAD
 # lists the displays to load, if not all of them:
