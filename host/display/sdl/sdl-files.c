@@ -40,12 +40,15 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#ifndef WIN32
 #include <sys/wait.h>
+#endif /* !WIN32 */
 
 /* the choosers: */
 #define TME_SDL_FILES_OSASCRIPT	(1)
 #define TME_SDL_FILES_ZENITY	(2)
 #define TME_SDL_FILES_KDIALOG	(3)
+#define TME_SDL_FILES_WIN32	(4)
 
 /* the chooser to run: */
 static int _tme_sdl_files_chooser;
@@ -226,6 +229,11 @@ _tme_sdl_files_choose(struct tme_screen *screen,
     }
     break;
 
+#ifdef WIN32
+  case TME_SDL_FILES_WIN32:
+    break;
+#endif /* WIN32 */
+
   default:
     abort();
   }
@@ -233,6 +241,17 @@ _tme_sdl_files_choose(struct tme_screen *screen,
 
   /* start the chooser, with its output to a pipe: */
   pid = -1;
+#ifdef WIN32
+  /* Windows' chooser runs in a thread, which closes the pipe when it's
+     done.  pid only says that a chooser is open: */
+  (void) fd;
+  fds[0] = tme_win32_choose(request->tme_display_files_request_title,
+			    start,
+			    request->tme_display_files_request_folder,
+			    request->tme_display_files_request_multiple,
+			    NULL);
+  pid = (fds[0] < 0 ? -1 : 1);
+#else  /* !WIN32 */
   if (pipe(fds) == 0) {
     pid = fork();
     if (pid == 0) {
@@ -253,6 +272,7 @@ _tme_sdl_files_choose(struct tme_screen *screen,
       close(fds[0]);
     }
   }
+#endif /* !WIN32 */
   if (script != NULL) {
     tme_free(script);
   }
@@ -264,8 +284,10 @@ _tme_sdl_files_choose(struct tme_screen *screen,
     _tme_display_files_chosen(screen, request, NULL);
     return;
   }
+#ifndef WIN32
   fcntl(fds[0], F_SETFL, fcntl(fds[0], F_GETFL) | O_NONBLOCK);
   fcntl(fds[0], F_SETFD, FD_CLOEXEC);
+#endif /* !WIN32 */
 
   files = tme_new0(struct tme_sdl_files, 1);
   files->tme_sdl_files_pid = pid;
@@ -295,7 +317,11 @@ _tme_sdl_files_poll(struct tme_sdl_display *display)
 
   /* read what the chooser has printed, until the end: */
   for (;;) {
+#ifdef WIN32
+    got = tme_win32_read_nb(files->tme_sdl_files_fd, buffer, sizeof(buffer));
+#else  /* !WIN32 */
     got = read(files->tme_sdl_files_fd, buffer, sizeof(buffer));
+#endif /* !WIN32 */
     if (got < 0 && errno == EINTR) {
       continue;
     }
@@ -313,8 +339,10 @@ _tme_sdl_files_poll(struct tme_sdl_display *display)
     files->tme_sdl_files_output[files->tme_sdl_files_output_length] = '\0';
   }
   close(files->tme_sdl_files_fd);
+#ifndef WIN32
   while (waitpid(files->tme_sdl_files_pid, &status, 0) < 0
 	 && errno == EINTR);
+#endif /* !WIN32 */
   display->tme_sdl_display_files = NULL;
 
   /* the paths are the nonempty lines.  a folder may end in a
@@ -357,16 +385,18 @@ _tme_sdl_files_poll(struct tme_sdl_display *display)
 int
 _tme_sdl_files_init(struct tme_sdl_display *display)
 {
-#ifdef __APPLE__
+#if defined(WIN32)
+  _tme_sdl_files_chooser = TME_SDL_FILES_WIN32;
+#elif defined(__APPLE__)
   _tme_sdl_files_chooser = TME_SDL_FILES_OSASCRIPT;
-#else  /* !__APPLE__ */
+#else  /* !WIN32 && !__APPLE__ */
   if (_tme_sdl_files_in_path("zenity")) {
     _tme_sdl_files_chooser = TME_SDL_FILES_ZENITY;
   }
   else if (_tme_sdl_files_in_path("kdialog")) {
     _tme_sdl_files_chooser = TME_SDL_FILES_KDIALOG;
   }
-#endif /* !__APPLE__ */
+#endif /* !WIN32 && !__APPLE__ */
   if (_tme_sdl_files_chooser == 0) {
     return (FALSE);
   }

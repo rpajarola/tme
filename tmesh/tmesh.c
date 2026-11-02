@@ -326,9 +326,6 @@ _tmesh_open(struct tmesh_io *io_new, struct tmesh_io *io_old, char **_output)
 
   /* try to open the file: */
   input->_tmesh_input_handle =
-#ifdef WIN32
-    (io_old==NULL) ? (tme_win32_open(io_new->tmesh_io_name, TME_FILE_RO, FILE_ATTRIBUTE_NORMAL, 0)) :
-#endif
     (tme_thread_open(io_new->tmesh_io_name, TME_FILE_RO));
   
   /* if the open failed: */
@@ -799,6 +796,14 @@ _tmesh_set_config(const char *script)
 
   /* find tmesh itself: */
   real = NULL;
+#ifdef WIN32
+  (void) path;
+  (void) colon;
+  (void) length;
+  if (GetModuleFileNameA(NULL, file, sizeof(file)) > 0) {
+    real = realpath(file, NULL);
+  }
+#else  /* !WIN32 */
   if (strchr(argv0_full, '/') != NULL) {
     real = realpath(argv0_full, NULL);
   }
@@ -818,6 +823,7 @@ _tmesh_set_config(const char *script)
       }
     }
   }
+#endif /* !WIN32 */
   if (real != NULL) {
     setenv("TMESH_PROGRAM", real, 1);
     free(real);
@@ -955,7 +961,11 @@ main(int argc, char **argv)
   /* check our command line: */
   usage = FALSE;
   initial_config_filename = NULL;
+#ifdef WIN32
+  log_filename = "NUL";
+#else  /* !WIN32 */
   log_filename = "/dev/null";
+#endif /* !WIN32 */
   control_spec = NULL;
   interactive = TRUE;
   edit = FALSE;
@@ -967,9 +977,30 @@ main(int argc, char **argv)
   /* open files in binary mode, or disk and ROM images get their CR/LF
      bytes translated: */
   _set_fmode(_O_BINARY);
+
+  /* sockets need Winsock started: */
+  tme_win32_sockets_init();
+
+  /* commands piped in must be waited for like anything else: */
+  tme_win32_stdin_pump(FALSE);
 #endif /* WIN32 */
   argv0_full = argv[0];
   if ((argv0 = strrchr(argv[0], '/')) == NULL) argv0 = argv[0]; else argv0++;
+#ifdef WIN32
+  /* Windows gives the whole path, with backslashes, and .exe: */
+  {
+    char *name;
+
+    if (strrchr(argv0, '\\') != NULL) {
+      argv0 = strrchr(argv0, '\\') + 1;
+    }
+    name = tme_strdup(argv0);
+    if (strlen(name) > 4 && !_stricmp(name + strlen(name) - 4, ".exe")) {
+      name[strlen(name) - 4] = '\0';
+    }
+    argv0 = name;
+  }
+#endif /* WIN32 */
 
   /* tmesh --ctl ...: a control socket client: */
   if (argc >= 2 && !strcmp(argv[1], "--ctl")) {

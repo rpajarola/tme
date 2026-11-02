@@ -40,6 +40,9 @@
 #include <time.h>
 #include <fcntl.h>
 #include <unistd.h>
+#ifndef O_BINARY
+#define O_BINARY	(0)
+#endif /* !O_BINARY */
 
 /* mapping from machine name to Sun code name.  a leading asterisk
    marks the name used for a code name in a banner, after which the
@@ -302,7 +305,7 @@ tme_sun_file_create(const char *filename, const void *contents,
   ssize_t rc;
 
   *_created = 0;
-  fd = open(filename, O_WRONLY | O_CREAT | O_EXCL, 0644);
+  fd = open(filename, O_WRONLY | O_CREAT | O_EXCL | O_BINARY, 0644);
   if (fd < 0) {
     return (errno == EEXIST ? 0 : errno);
   }

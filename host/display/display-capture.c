@@ -44,6 +44,20 @@
 #include <zlib.h>
 #endif /* HAVE_ZLIB */
 
+/* popen() runs the shell, sh or cmd.exe, which quote differently: */
+#ifdef WIN32
+#define TME_DISPLAY_RECORD_QUOTE	'"'
+#define TME_DISPLAY_RECORD_QUOTE_STR	"\""
+#define TME_DISPLAY_RECORD_FIND_FFMPEG	"where /q ffmpeg"
+/* the frames are binary, and a text-mode pipe would change them: */
+#define TME_DISPLAY_RECORD_POPEN_MODE	"wb"
+#else  /* !WIN32 */
+#define TME_DISPLAY_RECORD_QUOTE	'\''
+#define TME_DISPLAY_RECORD_QUOTE_STR	"'"
+#define TME_DISPLAY_RECORD_FIND_FFMPEG	"command -v ffmpeg >/dev/null 2>&1"
+#define TME_DISPLAY_RECORD_POPEN_MODE	"w"
+#endif /* !WIN32 */
+
 /* recordings have this many frames per second: */
 #define TME_DISPLAY_RECORD_FPS	(10)
 
@@ -482,13 +496,13 @@ _tme_display_record_start_locked(struct tme_screen *screen,
     return (rc);
   }
   tme_free(image.tme_display_image_pixels);
-  if (system("command -v ffmpeg >/dev/null 2>&1") != 0) {
+  if (system(TME_DISPLAY_RECORD_FIND_FFMPEG) != 0) {
     tme_output_append_error(_output, _("recording needs ffmpeg, which wasn't found"));
     _tme_display_message(screen, _("Recording needs ffmpeg, which wasn't found"));
     return (ENOENT);
   }
   name = (file != NULL ? tme_strdup(file) : _tme_display_capture_name("mp4"));
-  if (strchr(name, '\'') != NULL) {
+  if (strchr(name, TME_DISPLAY_RECORD_QUOTE) != NULL) {
     tme_output_append_error(_output, _("%s: file names with quotes are not supported"), name);
     tme_free(name);
     return (EINVAL);
@@ -504,16 +518,18 @@ _tme_display_record_start_locked(struct tme_screen *screen,
   sprintf(command,
 	  "ffmpeg -loglevel error -y"
 	  " -f rawvideo -pixel_format %s -video_size %dx%d -framerate %d -i -"
-	  " -vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2'"
+	  " -vf " TME_DISPLAY_RECORD_QUOTE_STR "pad=ceil(iw/2)*2:ceil(ih/2)*2" TME_DISPLAY_RECORD_QUOTE_STR
 	  " -c:v libx264 -preset veryfast -crf 18 -pix_fmt yuv420p"
-	  " '%s'",
+	  " " TME_DISPLAY_RECORD_QUOTE_STR "%s" TME_DISPLAY_RECORD_QUOTE_STR,
 	  (TME_ENDIAN_NATIVE == TME_ENDIAN_LITTLE ? "bgr0" : "0rgb"),
 	  record->tme_display_record_width,
 	  record->tme_display_record_height,
 	  TME_DISPLAY_RECORD_FPS,
 	  name);
+#ifdef SIGPIPE
   signal(SIGPIPE, SIG_IGN);
-  record->tme_display_record_pipe = popen(command, "w");
+#endif /* SIGPIPE */
+  record->tme_display_record_pipe = popen(command, TME_DISPLAY_RECORD_POPEN_MODE);
   tme_free(command);
   if (record->tme_display_record_pipe == NULL) {
     rc = errno;

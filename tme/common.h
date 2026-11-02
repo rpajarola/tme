@@ -58,10 +58,11 @@
 #ifdef HAVE_TIME_H
 #include <time.h>
 #endif
+#ifdef WIN32
+#include <tme/win32-compat.h>
+#endif
 #if defined(USE_GLIB_TIME) && defined(_TME_HAVE_GLIB)
 #include <glib.h>
-#elif defined(WIN32)
-#include <windows.h>
 #endif
 
 #ifdef _TME_HAVE_BYTESWAP_H

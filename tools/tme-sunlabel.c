@@ -55,6 +55,26 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
+#ifdef WIN32
+#include <io.h>
+
+/* Windows has no pread(2) or pwrite(2), and this tool doesn't need
+   their atomicity: */
+static ssize_t
+pread(int fd, void *buf, size_t count, off_t offset)
+{
+  return (_lseeki64(fd, offset, SEEK_SET) < 0 ? -1 : _read(fd, buf, count));
+}
+
+static ssize_t
+pwrite(int fd, const void *buf, size_t count, off_t offset)
+{
+  return (_lseeki64(fd, offset, SEEK_SET) < 0 ? -1 : _write(fd, buf, count));
+}
+#endif /* WIN32 */
+#ifndef O_BINARY
+#define O_BINARY	(0)
+#endif /* !O_BINARY */
 
 /* the size of a block, and of a Sun disk label: */
 #define BLOCK_SIZE		(512)
@@ -222,7 +242,7 @@ label_write(const char *image, int force, int sunos4)
   struct stat statbuf;
   int fd;
 
-  fd = open(image, O_RDWR | O_CREAT, 0644);
+  fd = open(image, O_RDWR | O_CREAT | O_BINARY, 0644);
   if (fd < 0 || fstat(fd, &statbuf) < 0) {
     fprintf(stderr, "%s: %s: %s\n", prog, image, strerror(errno));
     return (1);

@@ -50,6 +50,10 @@
 #include <string.h>
 #include <ctype.h>
 #include <unistd.h>
+#ifdef WIN32
+#include <io.h>
+#include <fcntl.h>
+#endif /* WIN32 */
 
 /* the EEPROM definition: */
 static const char * const binary_struct[] = {
@@ -784,6 +788,11 @@ main(int argc, char **argv)
   struct packed *packeds, value_packed;
   int value_packed_ok;
 
+#ifdef WIN32
+  /* the images are binary: */
+  _setmode(_fileno(stdin), _O_BINARY);
+  _setmode(_fileno(stdout), _O_BINARY);
+#endif /* WIN32 */
   prog = strrchr(argv[0], '/');
   prog = (prog == NULL ? argv[0] : prog + 1);
 

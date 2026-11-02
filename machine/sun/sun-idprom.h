@@ -39,6 +39,9 @@
 #define _MACHINE_SUN_SUN_IDPROM_H
 
 #include <stddef.h>
+#ifdef WIN32
+#include <tme/win32-compat.h>	/* random(), binary mode */
+#endif /* WIN32 */
 
 /* the size of an IDPROM: */
 #define TME_SUN_IDPROM_BYTES		(32)

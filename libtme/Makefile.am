@@ -35,7 +35,8 @@ libtme_la_SOURCES = misc-host.c \
 	hash.c \
 	token.c \
 	runlength.c \
-	alloc.c
+	alloc.c \
+	win32.c
 
 if THREADS_SJLJ
 libtme_la_SOURCES += threads-sjlj.c

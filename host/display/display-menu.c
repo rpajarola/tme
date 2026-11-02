@@ -37,7 +37,9 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#ifndef WIN32
 #include <sys/wait.h>
+#endif /* !WIN32 */
 #ifdef HAVE_STDARG_H
 #include <stdarg.h>
 #else  /* HAVE_STDARG_H */
@@ -398,8 +400,13 @@ _tme_display_menu_edit_config(struct tme_screen *screen,
 			      struct tme_display_menu_item *item)
 {
   const char *program, *config;
+#ifdef WIN32
+  const char *argv[5];
+  int rc;
+#else  /* !WIN32 */
   pid_t pid;
   int fd;
+#endif /* !WIN32 */
 
   program = getenv("TMESH_PROGRAM");
   config = getenv("TMESH_CONFIG");
@@ -407,6 +414,17 @@ _tme_display_menu_edit_config(struct tme_screen *screen,
     return;
   }
 
+#ifdef WIN32
+  argv[0] = program;
+  argv[1] = "--edit";
+  argv[2] = config;
+  argv[3] = "--running";
+  argv[4] = NULL;
+  rc = tme_win32_spawn(program, argv, TRUE);
+  if (rc != 0) {
+    _tme_display_message(screen, _("Could not open the machine window: %s"), strerror(rc));
+  }
+#else  /* !WIN32 */
   /* the window runs in a grandchild, which init reaps: */
   pid = fork();
   if (pid == 0) {
@@ -426,6 +444,7 @@ _tme_display_menu_edit_config(struct tme_screen *screen,
     return;
   }
   while (waitpid(pid, NULL, 0) < 0 && errno == EINTR);
+#endif /* !WIN32 */
 }
 
 /* this checks the Scale item for the screen's scaling: */

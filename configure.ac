@@ -104,7 +104,14 @@ linux*)
 #   SETCAP="setcap cap_sys_nice,cap_net_admin,cap_net_raw+ep"
    ;;
 mingw* | msys*)
-   AC_MSG_ERROR([native Windows is not supported; build under Cygwin instead])
+   dnl native Windows 10 and later (mingw-w64): the modules are built
+   dnl into tmesh.exe (--disable-shared), and sockets are Winsock's:
+   AC_DEFINE([TARGET_WIN32], [1], [Are we running WIN32?])
+   AC_DEFINE_UNQUOTED([TARGET_PREFIX], ["W"], [Target prefix])
+   CPPFLAGS="${CPPFLAGS-} -DWIN32_LEAN_AND_MEAN -D_WIN32_WINNT=0x0A00"
+   LIBS="${LIBS-} -lws2_32 -lcomdlg32 -lshell32 -lole32"
+   WIN32=yes
+   SETCAP="true"
    ;;
 cygwin*)   
    WIN32=cygwin
@@ -132,6 +139,10 @@ darwin*)
 esac
 
 AM_CONDITIONAL([WIN32], [test "${WIN32}" = "yes"])
+
+dnl when cross-compiling, the programs that make sources at build time
+dnl run with CROSS_RUN, e.g. wine for Windows:
+AC_ARG_VAR([CROSS_RUN], [command that runs programs built for the host when cross-compiling (e.g. wine)])
 
 AC_SUBST(DEV_TAP_FILENAME)
 AC_SUBST(SETCAP)
@@ -851,7 +862,7 @@ AC_MSG_RESULT($TME_DISPLAY_HOSTS)
 dnl Start the list of ethernet host support.
 TME_ETH_HOSTS=
 
-if test "x${enable_udp}" = xyes && test "x${ac_cv_header_sys_socket_h}" = xyes; then
+if test "x${enable_udp}" = xyes && { test "x${ac_cv_header_sys_socket_h}" = xyes || test "x${WIN32}" = xyes; }; then
    TME_ETH_HOSTS="udp ${TME_ETH_HOSTS}"
 fi
 

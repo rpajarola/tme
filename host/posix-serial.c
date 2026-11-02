@@ -1141,6 +1141,13 @@ TME_ELEMENT_SUB_NEW_DECL(tme_host_posix,serial) {
 
   /* open the devices: */
   flags = (strcmp(filename_in, filename_out)) ? (TME_FILE_RO) : (TME_FILE_RW);
+#ifdef WIN32
+  /* the terminal's input goes to the emulated machine as it is
+     typed: */
+  if (!strcmp(filename_in, "-")) {
+    tme_win32_stdin_pump(TRUE);
+  }
+#endif /* WIN32 */
   hand_in = (strcmp(filename_in, "-")) ?
     (_tme_posix_serial_new(element, filename_in, _output, flags | TME_FILE_NB)) :
     (TME_STD_EVENT_HANDLE(stdin));

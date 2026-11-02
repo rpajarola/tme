@@ -60,13 +60,11 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <netdb.h>
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <netinet/tcp.h>
-#include <sys/socket.h>
 #include <sys/stat.h>
-#include <sys/un.h>
+#include <tme/socket.h>
+#ifndef WIN32
+#include <netinet/tcp.h>
+#endif /* !WIN32 */
 #ifdef HAVE_ZLIB
 #include <zlib.h>
 #endif /* HAVE_ZLIB */
@@ -209,6 +207,7 @@ struct tme_rfb_display {
 };
 
 /* the Unix sockets to remove at exit: */
+#ifndef WIN32
 static char *_tme_rfb_unix_paths[4];
 
 /* this removes the Unix sockets: */
@@ -223,6 +222,7 @@ _tme_rfb_remove_unix_sockets(void)
     }
   }
 }
+#endif /* !WIN32 */
 
 /* sending: everything goes to a client's out buffer, which
    _tme_rfb_flush() sends as far as the socket takes it: */
@@ -249,7 +249,7 @@ _tme_rfb_disconnect(struct tme_rfb_display *display,
   TME_RFB_TRACE(display, client, "disconnected%s%s",
 		(why != NULL ? ": " : ""), (why != NULL ? why : ""));
 
-  close(client->tme_rfb_client_fd);
+  tme_socket_close(client->tme_rfb_client_fd);
   tme_free(client->tme_rfb_client_in);
   if (client->tme_rfb_client_out != NULL) {
     tme_free(client->tme_rfb_client_out);
@@ -340,7 +340,7 @@ _tme_rfb_flush(struct tme_rfb_display *display,
 {
   size_t done;
   ssize_t n;
-  int flags;
+  int flags, err;
 
 #ifdef MSG_NOSIGNAL
   flags = MSG_NOSIGNAL;
@@ -362,10 +362,11 @@ _tme_rfb_flush(struct tme_rfb_display *display,
       done += n;
       continue;
     }
-    if (n < 0 && errno == EINTR) {
+    err = (n < 0 ? tme_socket_errno() : 0);
+    if (n < 0 && err == TME_SOCKET_EINTR) {
       continue;
     }
-    if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+    if (n < 0 && tme_socket_would_block(err)) {
       break;
     }
     _tme_rfb_disconnect(display, client, NULL);
@@ -1487,10 +1488,11 @@ _tme_rfb_read_client(struct tme_rfb_display *display,
   long rc;
 
   while (client->tme_rfb_client_fd >= 0) {
-    n = recv(client->tme_rfb_client_fd, buf, sizeof(buf), 0);
+    n = recv(client->tme_rfb_client_fd, (char *) buf, sizeof(buf), 0);
     if (n <= 0) {
       if (n == 0
-	  || (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)) {
+	  || (!tme_socket_would_block(tme_socket_errno())
+	      && tme_socket_errno() != TME_SOCKET_EINTR)) {
 	_tme_rfb_disconnect(display, client, NULL);
       }
       return;
@@ -1548,7 +1550,9 @@ _tme_rfb_accept_clients(struct tme_rfb_display *display)
   int fd, one, client_i;
 
   while ((fd = accept(display->tme_rfb_display_listen_fd, NULL, NULL)) >= 0) {
+#ifdef FD_CLOEXEC
     fcntl(fd, F_SETFD, FD_CLOEXEC);
+#endif /* FD_CLOEXEC */
     one = 1;
 #ifdef SO_NOSIGPIPE
     setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, (void *) &one, sizeof(one));
@@ -1567,11 +1571,11 @@ _tme_rfb_accept_clients(struct tme_rfb_display *display)
 	      0, TME_OK,
 	      (&display->display.tme_display_element->tme_element_log_handle,
 	       _("too many VNC clients")));
-      close(fd);
+      tme_socket_close(fd);
       continue;
     }
 
-    fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);
+    tme_socket_set_nonblocking(fd);
     client->tme_rfb_client_fd = fd;
     client->tme_rfb_client_state = TME_RFB_STATE_VERSION;
     client->tme_rfb_client_in = tme_new(tme_uint8_t, TME_RFB_MAX_MESSAGE);
@@ -1783,12 +1787,16 @@ _tme_rfb_listen_tcp(struct tme_rfb_display *display,
   }
   fd = socket(ai->ai_family, SOCK_STREAM, 0);
   if (fd < 0) {
-    rc = errno;
+    rc = tme_socket_errno();
     freeaddrinfo(ai);
     return (rc);
   }
+#ifndef WIN32
+  /* (on Windows, SO_REUSEADDR would let us take a port that another
+     program is listening on): */
   one = 1;
   setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (void *) &one, sizeof(one));
+#endif /* !WIN32 */
 
   /* [::] is IPv4's addresses too (not the default on BSDs): */
   if (ai->ai_family == AF_INET6) {
@@ -1796,8 +1804,13 @@ _tme_rfb_listen_tcp(struct tme_rfb_display *display,
     setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, (void *) &zero, sizeof(zero));
   }
   if (bind(fd, ai->ai_addr, ai->ai_addrlen) < 0) {
-    rc = errno;
-    close(fd);
+    rc = tme_socket_errno();
+#ifdef WIN32
+    if (rc == WSAEADDRINUSE || rc == WSAEACCES) {
+      rc = EADDRINUSE;
+    }
+#endif /* WIN32 */
+    tme_socket_close(fd);
     freeaddrinfo(ai);
     return (rc);
   }
@@ -1818,15 +1831,23 @@ _tme_rfb_listen(struct tme_rfb_display *display,
 		const char *address, const char *port, const char *path,
 		char **_output)
 {
+#ifndef WIN32
   struct sockaddr_un sun;
   struct stat st;
+  int path_i;
+#endif /* !WIN32 */
   char portbuf[16];
   long portnr;
   char *end;
-  int loopback, rc, path_i;
+  int loopback, rc;
 
   /* a Unix socket: */
   if (path != NULL) {
+#ifdef WIN32
+    tme_output_append_error(_output, "%s: %s", path,
+			    _("Unix sockets aren't supported on Windows; use a port"));
+    return (EINVAL);
+#else  /* !WIN32 */
     if (path[0] == '\0' || strlen(path) >= sizeof(sun.sun_path)) {
       tme_output_append_error(_output, "%s %s", path, _("is a bad socket path"));
       return (EINVAL);
@@ -1867,6 +1888,7 @@ _tme_rfb_listen(struct tme_rfb_display *display,
       }
     }
     fprintf(stderr, "tmesh: VNC server: socket %s\n", path);
+#endif /* !WIN32 */
   }
 
   /* a TCP port: */
@@ -1905,13 +1927,14 @@ _tme_rfb_listen(struct tme_rfb_display *display,
   }
 
   if (listen(display->tme_rfb_display_listen_fd, TME_RFB_MAX_CLIENTS) < 0) {
-    rc = errno;
+    rc = tme_socket_errno();
     tme_output_append_error(_output, _("cannot listen: %s"), strerror(rc));
     return (rc);
   }
+#ifdef FD_CLOEXEC
   fcntl(display->tme_rfb_display_listen_fd, F_SETFD, FD_CLOEXEC);
-  fcntl(display->tme_rfb_display_listen_fd, F_SETFL,
-	fcntl(display->tme_rfb_display_listen_fd, F_GETFL) | O_NONBLOCK);
+#endif /* FD_CLOEXEC */
+  tme_socket_set_nonblocking(display->tme_rfb_display_listen_fd);
   if (display->tme_rfb_display_password != NULL) {
     fprintf(stderr, "tmesh: VNC clients need the password (from TME_VNC_PASSWORD)\n");
   }

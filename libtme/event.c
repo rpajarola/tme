@@ -34,7 +34,9 @@
 /* includes: */
 #include <tme/event.h>
 #include <tme/misc.h>
+#ifndef WIN32
 #include <poll.h>
+#endif /* !WIN32 */
 #include <errno.h>
 
 /* an event set: */
@@ -167,6 +169,178 @@ event_ctl(struct event_set *es, event_t event, unsigned int rwflags, void *arg)
   }
   _tme_event_append(es, event, rwflags, arg);
 }
+
+#ifdef WIN32
+
+/* Windows' poll(), WSAPoll(), works only with sockets, and takes no
+   POLLPRI.  pipes, consoles and files are checked here instead: a
+   pipe is readable when it holds data or has been closed, a console
+   when a key that reads as a character is waiting (in line mode,
+   when a whole line is), and a file always.  everything is writable.
+   (a console in raw mode is better read through
+   tme_win32_stdin_pump(), which gets escape sequences right.)
+   while a pipe or a console is waited on, this checks every few
+   milliseconds; with only sockets, WSAPoll() does all the waiting: */
+
+#define _TME_EVENT_WIN32_STEP	(10)
+
+/* this returns nonzero if a non-socket handle is ready for
+   reading: */
+static int
+_tme_event_win32_readable(HANDLE handle)
+{
+  DWORD avail, mode, count, i;
+  INPUT_RECORD records[64];
+  const KEY_EVENT_RECORD *key;
+
+  switch (GetFileType(handle)) {
+
+  case FILE_TYPE_PIPE:
+    /* a pipe that can't be peeked at (Wine's, for a Unix pipe) is never
+       readable here.  tme_win32_stdin_pump() puts standard input behind
+       a pipe that can be: */
+    if (!PeekNamedPipe(handle, NULL, 0, NULL, &avail, NULL)) {
+      return (GetLastError() == ERROR_BROKEN_PIPE);
+    }
+    return (avail > 0);
+
+  case FILE_TYPE_CHAR:
+    if (!GetConsoleMode(handle, &mode)) {
+      /* a character device that isn't a console, like NUL: */
+      return (TRUE);
+    }
+    for (;;) {
+      if (!PeekConsoleInputW(handle, records, TME_ARRAY_ELS(records), &count)
+	  || count == 0) {
+	return (FALSE);
+      }
+      for (i = 0; i < count; i++) {
+	key = &records[i].Event.KeyEvent;
+	if (records[i].EventType == KEY_EVENT
+	    && key->bKeyDown
+	    && key->uChar.UnicodeChar != 0
+	    && (!(mode & ENABLE_LINE_INPUT)
+		|| key->uChar.UnicodeChar == '\r')) {
+	  return (TRUE);
+	}
+      }
+
+      /* in line mode, the keys typed so far are part of a line that
+	 isn't finished: */
+      if (mode & ENABLE_LINE_INPUT) {
+	return (FALSE);
+      }
+
+      /* otherwise, these are key releases, mouse and focus events
+	 and the like, which a read() would block on, so drop them: */
+      ReadConsoleInputW(handle, records, count, &count);
+    }
+
+  default:
+    return (TRUE);
+  }
+}
+
+/* this does what poll() does, for any mix of sockets and other
+   handles: */
+static int
+_tme_event_poll(struct pollfd *fds, int nfds, int timeout)
+{
+  WSAPOLLFD *sockets;
+  int *socket_fds;
+  int n_sockets, n_waiting, ready, i, j, step, type;
+  int type_len;
+  DWORD start;
+  HANDLE handle;
+
+  sockets = tme_new(WSAPOLLFD, TME_MAX(nfds, 1));
+  socket_fds = tme_new(int, TME_MAX(nfds, 1));
+  start = GetTickCount();
+  for (;;) {
+
+    /* check the handles that aren't sockets, and collect the
+       sockets: */
+    ready = 0;
+    n_sockets = 0;
+    n_waiting = 0;
+    for (i = 0; i < nfds; i++) {
+      fds[i].revents = 0;
+      type_len = sizeof(type);
+      if (getsockopt((SOCKET) fds[i].fd, SOL_SOCKET, SO_TYPE, (char *) &type, &type_len) == 0) {
+	sockets[n_sockets].fd = (SOCKET) fds[i].fd;
+	sockets[n_sockets].events = (((fds[i].events & POLLIN) ? POLLRDNORM : 0)
+				     | ((fds[i].events & POLLOUT) ? POLLWRNORM : 0));
+	sockets[n_sockets].revents = 0;
+	socket_fds[n_sockets] = i;
+	n_sockets++;
+	continue;
+      }
+      handle = (HANDLE) _get_osfhandle(fds[i].fd);
+      if (handle == INVALID_HANDLE_VALUE) {
+	fds[i].revents = POLLNVAL;
+      }
+      else {
+	if (fds[i].events & POLLIN) {
+	  if (_tme_event_win32_readable(handle)) {
+	    fds[i].revents |= POLLIN;
+	  }
+	  else {
+	    n_waiting++;
+	  }
+	}
+	fds[i].revents |= fds[i].events & POLLOUT;
+      }
+      if (fds[i].revents != 0) {
+	ready++;
+      }
+    }
+
+    /* wait for the sockets, but only for a step if something else is
+       ready or is being waited on: */
+    step = timeout;
+    if (ready > 0) {
+      step = 0;
+    }
+    else if (n_waiting > 0
+	     && (step < 0 || step > _TME_EVENT_WIN32_STEP)) {
+      step = _TME_EVENT_WIN32_STEP;
+    }
+    if (n_sockets > 0) {
+      if (WSAPoll(sockets, n_sockets, step) < 0) {
+	ready = -1;
+	break;
+      }
+      for (j = 0; j < n_sockets; j++) {
+	i = socket_fds[j];
+	if (sockets[j].revents & (POLLRDNORM | POLLRDBAND)) {
+	  fds[i].revents |= POLLIN;
+	}
+	if (sockets[j].revents & POLLWRNORM) {
+	  fds[i].revents |= POLLOUT;
+	}
+	fds[i].revents |= sockets[j].revents & (POLLERR | POLLHUP | POLLNVAL);
+	if (fds[i].revents != 0) {
+	  ready++;
+	}
+      }
+    }
+    else if (step != 0) {
+      Sleep(step < 0 ? INFINITE : (DWORD) step);
+    }
+
+    if (ready > 0
+	|| timeout == 0
+	|| (timeout > 0 && GetTickCount() - start >= (DWORD) timeout)) {
+      break;
+    }
+  }
+  tme_free(sockets);
+  tme_free(socket_fds);
+  return (ready);
+}
+#define poll _tme_event_poll
+
+#endif /* WIN32 */
 
 /* this waits for events in a set: */
 int

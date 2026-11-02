@@ -33,5 +33,5 @@ dist_examples_DATA = sun-keyboards.txt my-sun-macros.txt
 BUILT_SOURCES = sun3-eeprom-default.c
 CLEANFILES = sun3-eeprom-default.c
 sun3-eeprom-default.c: tme-sun-eeprom$(EXEEXT)
-	./tme-sun-eeprom$(EXEEXT) --format-input=text --format-output=c < /dev/null > $@.tmp
+	$(CROSS_RUN) ./tme-sun-eeprom$(EXEEXT) --format-input=text --format-output=c < /dev/null > $@.tmp
 	mv $@.tmp $@

@@ -47,7 +47,7 @@ m68k_opmap_make_SOURCES = m68k-opmap-make.c
 
 # target to make m68k-opmap.c:
 m68k-opmap.c: m68k-iset.txt m68k-opmap-make$(EXEEXT)
-	./m68k-opmap-make$(EXEEXT) $(srcdir)/m68k-iset.txt m68000 m68010 m68020 > $@.tmp
+	$(CROSS_RUN) ./m68k-opmap-make$(EXEEXT) $(srcdir)/m68k-iset.txt m68000 m68010 m68020 > $@.tmp
 	mv $@.tmp $@
 
 # target to make m68k-insns-auto.c:

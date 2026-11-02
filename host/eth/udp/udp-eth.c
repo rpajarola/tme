@@ -62,9 +62,73 @@
 
 /* includes: */
 #include "eth-if.h"
+#include <tme/socket.h>
 #include <time.h>
 
 /* macros: */
+
+#ifdef WIN32
+
+/* Winsock has no sendmsg() or recvmsg() for UDP, so these gather and
+   scatter through one buffer, and use sendto() and recvfrom(): */
+struct iovec {
+  void *iov_base;
+  size_t iov_len;
+};
+struct msghdr {
+  void *msg_name;
+  socklen_t msg_namelen;
+  struct iovec *msg_iov;
+  size_t msg_iovlen;
+};
+
+static ssize_t
+sendmsg(int fd, const struct msghdr *msg, int flags)
+{
+  char buffer[2048];
+  size_t len, iov_i;
+
+  len = 0;
+  for (iov_i = 0; iov_i < msg->msg_iovlen; iov_i++) {
+    if (msg->msg_iov[iov_i].iov_len > sizeof(buffer) - len) {
+      WSASetLastError(WSAEMSGSIZE);
+      return (-1);
+    }
+    memcpy(buffer + len, msg->msg_iov[iov_i].iov_base, msg->msg_iov[iov_i].iov_len);
+    len += msg->msg_iov[iov_i].iov_len;
+  }
+  return (sendto(fd, buffer, len, flags,
+		 (const struct sockaddr *) msg->msg_name, msg->msg_namelen));
+}
+
+static ssize_t
+recvmsg(int fd, struct msghdr *msg, int flags)
+{
+  char buffer[2048];
+  size_t iov_i, part, done;
+  int namelen, len;
+
+  namelen = msg->msg_namelen;
+  len = recvfrom(fd, buffer, sizeof(buffer), flags,
+		 (struct sockaddr *) msg->msg_name, &namelen);
+  if (len < 0) {
+    return (-1);
+  }
+  msg->msg_namelen = namelen;
+  done = 0;
+  for (iov_i = 0; iov_i < msg->msg_iovlen && done < (size_t) len; iov_i++) {
+    part = TME_MIN(msg->msg_iov[iov_i].iov_len, (size_t) len - done);
+    memcpy(msg->msg_iov[iov_i].iov_base, buffer + done, part);
+    done += part;
+  }
+  return (done);
+}
+
+#ifndef SIO_UDP_CONNRESET
+#define SIO_UDP_CONNRESET	_WSAIOW(IOC_VENDOR, 12)
+#endif
+
+#endif /* WIN32 */
 
 /* the most fixed and learned peers: */
 #define TME_UDP_PEERS_MAX	(32)
@@ -545,7 +609,7 @@ _tme_udp_send_frame(struct tme_udp *udp, struct tme_udp_peer *peer,
   if (sendmsg(udp->tme_udp_fd, &msg, 0) < 0) {
 
     /* like Ethernet, we don't guarantee delivery: */
-    tme_log(&udp->tme_udp_element->tme_element_log_handle, 1, errno,
+    tme_log(&udp->tme_udp_element->tme_element_log_handle, 1, tme_socket_errno(),
 	    (&udp->tme_udp_element->tme_element_log_handle,
 	     _("send to %s failed"),
 	     _tme_udp_sockaddr_string(&peer->tme_udp_peer_addr,
@@ -726,8 +790,14 @@ _tme_udp_read(void *data)
     msg.msg_iovlen = iov_i;
     len = recvmsg(udp->tme_udp_fd, &msg, 0);
     if (len < 0) {
-      if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR
-	  || errno == ECONNREFUSED) {
+      rc = tme_socket_errno();
+      if (tme_socket_would_block(rc) || rc == TME_SOCKET_EINTR
+#ifdef WIN32
+	  || rc == WSAECONNRESET || rc == WSAEMSGSIZE
+#else  /* !WIN32 */
+	  || rc == ECONNREFUSED
+#endif /* !WIN32 */
+	  ) {
 	continue;
       }
       return (-1);
@@ -1013,7 +1083,7 @@ TME_ELEMENT_SUB_NEW_DECL(tme_host_udp,eth) {
   /* open and bind the socket: */
   fd = socket(udp->tme_udp_family, SOCK_DGRAM, 0);
   if (fd < 0) {
-    saved_errno = errno;
+    saved_errno = tme_socket_errno();
     tme_output_append_error(_output, _("socket: %s"), strerror(saved_errno));
     tme_free(udp);
     return (saved_errno);
@@ -1021,17 +1091,26 @@ TME_ELEMENT_SUB_NEW_DECL(tme_host_udp,eth) {
 #ifdef IPV6_V6ONLY
   if (udp->tme_udp_family == AF_INET6) {
     opt = 0;
-    setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &opt, sizeof(opt));
+    setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, (const void *) &opt, sizeof(opt));
   }
 #endif
+#ifdef WIN32
+  {
+    /* a datagram that a peer refused (ICMP port unreachable) must
+       not make the next recvfrom() fail: */
+    BOOL report = FALSE;
+    DWORD bytes;
+    WSAIoctl(fd, SIO_UDP_CONNRESET, &report, sizeof(report), NULL, 0, &bytes, NULL, NULL);
+  }
+#endif /* WIN32 */
   if (bind(fd, (struct sockaddr *) &listen_addr, listen_addr_len) < 0
-      || fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK) < 0) {
-    saved_errno = errno;
+      || tme_socket_set_nonblocking(fd) < 0) {
+    saved_errno = tme_socket_errno();
     tme_output_append_error(_output, _("%s: %s"),
 			    _tme_udp_sockaddr_string(&listen_addr, listen_addr_len,
 						     addr_buf, sizeof(addr_buf)),
 			    strerror(saved_errno));
-    close(fd);
+    tme_socket_close(fd);
     tme_free(udp);
     return (saved_errno);
   }
@@ -1069,7 +1148,7 @@ TME_ELEMENT_SUB_NEW_DECL(tme_host_udp,eth) {
 		    udp,
 		    NULL);
   if (rc != TME_OK) {
-    close(fd);
+    tme_socket_close(fd);
     tme_free(udp);
     return (rc);
   }

@@ -339,6 +339,11 @@ idprom_make(int argc, char **argv)
 int
 main(int argc, char **argv)
 {
+#ifdef WIN32
+  /* the images are binary: */
+  _setmode(_fileno(stdin), _O_BINARY);
+  _setmode(_fileno(stdout), _O_BINARY);
+#endif /* WIN32 */
   /* if our standard input is not a terminal, assume we're checking
      an IDPROM there: */
   if (!isatty(0)) {

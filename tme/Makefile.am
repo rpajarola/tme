@@ -26,7 +26,9 @@ pkginclude_HEADERS = memory.h \
 	token.h \
 	completion.h \
 	tmesh.h \
-	runlength.h
+	runlength.h \
+	socket.h \
+	win32-compat.h
 info_TEXINFOS = tme.texi
 tme_TEXINFOS = fdl.texi
 

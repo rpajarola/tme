@@ -56,7 +56,9 @@
 #include <signal.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#ifndef WIN32
 #include <sys/wait.h>
+#endif /* !WIN32 */
 
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
@@ -750,7 +752,12 @@ _tmesh_window_choose(const char *title, const char *start, const char *save_name
   abs_start = (start != NULL ? realpath(start, NULL) : NULL);
 
   argc = 0;
-#ifdef __APPLE__
+#if defined(WIN32)
+  (void) script;
+  (void) arg1;
+  (void) arg2;
+  (void) argv;
+#elif defined(__APPLE__)
   snprintf(script, sizeof(script), "activate\nset chosen to %s with prompt ",
 	   (folder ? "choose folder" : save_name != NULL ? "choose file name" : "choose file"));
   _tmesh_window_applescript(script, sizeof(script), title);
@@ -809,11 +816,18 @@ _tmesh_window_choose(const char *title, const char *start, const char *save_name
     _tmesh_window_message("There is no file chooser: install zenity or kdialog, or type the path");
     return;
   }
-#endif /* !__APPLE__ */
+#endif /* !WIN32 && !__APPLE__ */
   argv[argc] = NULL;
 
   /* start the chooser, with its output to a pipe: */
   ui.chooser_pid = -1;
+#ifdef WIN32
+  /* Windows' chooser runs in a thread, which closes the pipe when it's
+     done.  chooser_pid only says that a chooser is open: */
+  (void) fd;
+  fds[0] = tme_win32_choose(title, abs_start, folder, FALSE, save_name);
+  ui.chooser_pid = (fds[0] < 0 ? -1 : 1);
+#else  /* !WIN32 */
   if (pipe(fds) == 0) {
     ui.chooser_pid = fork();
     if (ui.chooser_pid == 0) {
@@ -829,6 +843,7 @@ _tmesh_window_choose(const char *title, const char *start, const char *save_name
       close(fds[0]);
     }
   }
+#endif /* !WIN32 */
   if (abs_start != NULL) {
     free(abs_start);
   }
@@ -838,8 +853,10 @@ _tmesh_window_choose(const char *title, const char *start, const char *save_name
     return;
   }
   ui.chooser_fd = fds[0];
+#ifndef WIN32
   fcntl(ui.chooser_fd, F_SETFL, fcntl(ui.chooser_fd, F_GETFL) | O_NONBLOCK);
   fcntl(ui.chooser_fd, F_SETFD, FD_CLOEXEC);
+#endif /* !WIN32 */
   ui.chooser_len = 0;
   ui.chooser_folder = folder;
   ui.chooser_done = done;
@@ -859,7 +876,11 @@ _tmesh_window_choose_poll(void)
     return;
   }
   for (;;) {
+#ifdef WIN32
+    got = tme_win32_read_nb(ui.chooser_fd, buffer, sizeof(buffer));
+#else  /* !WIN32 */
     got = read(ui.chooser_fd, buffer, sizeof(buffer));
+#endif /* !WIN32 */
     if (got < 0 && errno == EINTR) {
       continue;
     }
@@ -876,7 +897,9 @@ _tmesh_window_choose_poll(void)
     ui.chooser_len += got;
   }
   close(ui.chooser_fd);
+#ifndef WIN32
   while (waitpid(ui.chooser_pid, &status, 0) < 0 && errno == EINTR);
+#endif /* !WIN32 */
   ui.chooser_pid = 0;
 
   /* the path is the first line.  (osascript ends a folder with a
@@ -2020,6 +2043,14 @@ _tmesh_window_page_network(void)
 static void
 _tmesh_window_open_text(const char *path)
 {
+#ifdef WIN32
+  int rc;
+
+  rc = tme_win32_open_file(path);
+  if (rc != 0) {
+    _tmesh_window_message("Could not open a text editor: %s", strerror(rc));
+  }
+#else  /* !WIN32 */
   pid_t pid;
 
   pid = fork();
@@ -2034,6 +2065,7 @@ _tmesh_window_open_text(const char *path)
   if (pid < 0) {
     _tmesh_window_message("Could not open a text editor: %s", strerror(errno));
   }
+#endif /* !WIN32 */
 }
 
 static void
@@ -2419,9 +2451,13 @@ tmesh_window_run(const char *edit_path, int running, char **_script)
   }
 
   if (ui.chooser_pid > 0) {
+#ifndef WIN32
     kill(ui.chooser_pid, SIGTERM);
+#endif /* !WIN32 */
     close(ui.chooser_fd);
+#ifndef WIN32
     waitpid(ui.chooser_pid, NULL, 0);
+#endif /* !WIN32 */
   }
   _tmesh_window_list_free();
   tmesh_config_list_free(ui.n_rom_dirs, ui.rom_dirs);
