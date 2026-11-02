@@ -44,14 +44,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/time.h>
-#ifndef WIN32
 #include <unistd.h>
-#endif /* !WIN32 */
+#include <tme/socket.h>
 
 /* the program name, from tmesh.c: */
 extern const char *argv0;
-
-#ifndef WIN32
 
 /* macros: */
 
@@ -426,7 +423,7 @@ static void
 _tmesh_mcp_conn_close(struct _tmesh_mcp_conn *conn)
 {
   if (conn->fd >= 0) {
-    close(conn->fd);
+    tme_socket_close(conn->fd);
   }
   conn->fd = -1;
   free(conn->buf);
@@ -748,10 +745,17 @@ _tmesh_mcp_call(const struct _tmesh_mcp_tool *tool, const char *cmd, cJSON *args
   if (tool != NULL
       && tool->kind == TMESH_MCP_SCREENDUMP
       && cJSON_GetObjectItemCaseSensitive(req, "file") == NULL) {
+#ifdef WIN32
+    dir = getenv("TEMP");
+    if (dir == NULL || dir[0] == '\0') {
+      dir = ".";
+    }
+#else  /* !WIN32 */
     dir = getenv("TMPDIR");
     if (dir == NULL || dir[0] == '\0') {
       dir = "/tmp";
     }
+#endif /* !WIN32 */
     snprintf(tmp, sizeof(tmp), "%s/tmesh-mcp-%ld-%d.png", dir, (long) getpid(), _tmesh_mcp_tmp_count++);
     cJSON_AddStringToObject(req, "file", tmp);
     own_file = TRUE;
@@ -1057,6 +1061,11 @@ tmesh_mcp(int argc, char **argv)
     return (2);
   }
   _tmesh_mcp_spec = argv[2];
+#ifdef WIN32
+  /* JSON-RPC lines end in a bare newline: */
+  _setmode(_fileno(stdin), _O_BINARY);
+  _setmode(_fileno(stdout), _O_BINARY);
+#endif /* WIN32 */
   while ((line = _tmesh_mcp_read_line()) != NULL) {
     if (line[0] != '\0') {
       _tmesh_mcp_handle(line);
@@ -1066,13 +1075,3 @@ tmesh_mcp(int argc, char **argv)
   return (0);
 }
 
-#else  /* WIN32 */
-
-int
-tmesh_mcp(int argc, char **argv)
-{
-  fprintf(stderr, "%s: --mcp isn't supported on Windows\n", argv0);
-  return (2);
-}
-
-#endif /* WIN32 */

@@ -51,20 +51,13 @@
 #include <string.h>
 #include <errno.h>
 #include <sys/time.h>
-#ifndef WIN32
+#include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <sys/socket.h>
-#include <sys/stat.h>
-#include <sys/un.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#endif /* !WIN32 */
+#include <tme/socket.h>
 
 /* the program name, from tmesh.c: */
 extern const char *argv0;
-
-#ifndef WIN32
 
 /* macros: */
 #define TMESH_CTL_PROTO_VERSION		(1)
@@ -442,7 +435,7 @@ _tmesh_ctl_disconnect(void)
   if (_tmesh_ctl_client_fd < 0) {
     return;
   }
-  close(_tmesh_ctl_client_fd);
+  tme_socket_close(_tmesh_ctl_client_fd);
   _tmesh_ctl_client_fd = -1;
   _tmesh_ctl_inlen = 0;
 
@@ -469,7 +462,7 @@ tmesh_ctl_send_all(int fd, const char *buf, size_t len)
       len -= rc;
       continue;
     }
-    if (rc < 0 && errno == EINTR) {
+    if (rc < 0 && tme_socket_errno() == TME_SOCKET_EINTR) {
       continue;
     }
     return (FALSE);
@@ -2212,7 +2205,7 @@ static void
 _tmesh_ctl_close(void)
 {
   if (_tmesh_ctl_listen_fd >= 0) {
-    close(_tmesh_ctl_listen_fd);
+    tme_socket_close(_tmesh_ctl_listen_fd);
     _tmesh_ctl_listen_fd = -1;
   }
   if (_tmesh_ctl_unix_path != NULL) {
@@ -2330,14 +2323,20 @@ static void
 _tmesh_ctl_accept(void)
 {
   const char *busy;
-  int fd, flags;
+  int fd;
 #ifdef SO_NOSIGPIPE
   int one;
 #endif
+#ifdef WIN32
+  DWORD timeout;
+#else  /* !WIN32 */
   struct timeval tv;
+#endif /* !WIN32 */
 
   while ((fd = accept(_tmesh_ctl_listen_fd, NULL, NULL)) >= 0) {
+#ifdef FD_CLOEXEC
     fcntl(fd, F_SETFD, FD_CLOEXEC);
+#endif /* FD_CLOEXEC */
 #ifdef SO_NOSIGPIPE
     one = 1;
     setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, (void *) &one, sizeof(one));
@@ -2347,17 +2346,22 @@ _tmesh_ctl_accept(void)
     if (_tmesh_ctl_client_fd >= 0) {
       busy = "{\"ok\":false,\"error\":{\"code\":\"busy\",\"message\":\"another client is connected\"}}\n";
       (void) tmesh_ctl_send_all(fd, busy, strlen(busy));
-      close(fd);
+      tme_socket_close(fd);
       continue;
     }
 
     /* reads don't block, and a client that doesn't read its
        responses for a while is dropped: */
-    flags = fcntl(fd, F_GETFL);
-    fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+    tme_socket_set_nonblocking(fd);
+#ifdef WIN32
+    /* (Winsock's timeout is in milliseconds): */
+    timeout = TMESH_CTL_SEND_TIMEOUT_SEC * 1000;
+    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, (const char *) &timeout, sizeof(timeout));
+#else  /* !WIN32 */
     tv.tv_sec = TMESH_CTL_SEND_TIMEOUT_SEC;
     tv.tv_usec = 0;
     setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, (void *) &tv, sizeof(tv));
+#endif /* !WIN32 */
     _tmesh_ctl_client_fd = fd;
     _tmesh_ctl_inlen = 0;
   }
@@ -2375,7 +2379,9 @@ _tmesh_ctl_read(void)
   while (_tmesh_ctl_client_fd >= 0) {
     rc = recv(_tmesh_ctl_client_fd, buf, sizeof(buf), 0);
     if (rc <= 0) {
-      if (rc == 0 || (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)) {
+      if (rc == 0
+	  || (!tme_socket_would_block(tme_socket_errno())
+	      && tme_socket_errno() != TME_SOCKET_EINTR)) {
 	_tmesh_ctl_disconnect();
       }
       return;
@@ -2459,13 +2465,15 @@ void
 tmesh_ctl_start(const char *spec, int (*command) _TME_P((const char *, char **)))
 {
   struct sockaddr_in sin;
+#ifndef WIN32
   struct sockaddr_un sun;
-  socklen_t sinlen;
   struct stat st;
   const char *path;
+#endif /* !WIN32 */
+  socklen_t sinlen;
   char *end;
   long port;
-  int one, flags;
+  int one;
   tme_threadid_t thread;
 
   _tmesh_ctl_command = command;
@@ -2482,13 +2490,17 @@ tmesh_ctl_start(const char *spec, int (*command) _TME_P((const char *, char **))
       perror("--control: socket");
       exit(1);
     }
+#ifndef WIN32
+    /* (on Windows, SO_REUSEADDR would let us take a port that another
+       program is listening on): */
     setsockopt(_tmesh_ctl_listen_fd, SOL_SOCKET, SO_REUSEADDR, (void *) &one, sizeof(one));
+#endif /* !WIN32 */
     memset(&sin, 0, sizeof(sin));
     sin.sin_family = AF_INET;
     sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     sin.sin_port = htons(port);
     if (bind(_tmesh_ctl_listen_fd, (struct sockaddr *) &sin, sizeof(sin)) < 0) {
-      fprintf(stderr, "%s: --control: can't listen on port %ld: %s\n", argv0, port, strerror(errno));
+      fprintf(stderr, "%s: --control: can't listen on port %ld: %s\n", argv0, port, strerror(tme_socket_errno()));
       exit(1);
     }
     sinlen = sizeof(sin);
@@ -2496,6 +2508,10 @@ tmesh_ctl_start(const char *spec, int (*command) _TME_P((const char *, char **))
     fprintf(stderr, "%s: control socket: tcp:%d\n", argv0, ntohs(sin.sin_port));
   }
   else if (!strncmp(spec, "unix:", 5)) {
+#ifdef WIN32
+    fprintf(stderr, "%s: --control: Unix sockets aren't supported on Windows; use tcp:PORT\n", argv0);
+    exit(1);
+#else  /* !WIN32 */
     path = spec + 5;
     if (path[0] == '\0' || strlen(path) >= sizeof(sun.sun_path)) {
       fprintf(stderr, "%s: --control: bad path in '%s'\n", argv0, spec);
@@ -2524,6 +2540,7 @@ tmesh_ctl_start(const char *spec, int (*command) _TME_P((const char *, char **))
     }
     _tmesh_ctl_unix_path = strdup(path);
     atexit(_tmesh_ctl_close);
+#endif /* !WIN32 */
   }
   else {
     fprintf(stderr, "%s: --control: expected unix:PATH or tcp:PORT, not '%s'\n", argv0, spec);
@@ -2534,9 +2551,10 @@ tmesh_ctl_start(const char *spec, int (*command) _TME_P((const char *, char **))
     perror("--control: listen");
     exit(1);
   }
+#ifdef FD_CLOEXEC
   fcntl(_tmesh_ctl_listen_fd, F_SETFD, FD_CLOEXEC);
-  flags = fcntl(_tmesh_ctl_listen_fd, F_GETFL);
-  fcntl(_tmesh_ctl_listen_fd, F_SETFL, flags | O_NONBLOCK);
+#endif /* FD_CLOEXEC */
+  tme_socket_set_nonblocking(_tmesh_ctl_listen_fd);
 
   _tmesh_ctl_inbuf = tme_new(char, TMESH_CTL_MAX_LINE);
   tme_mutex_init(&_tmesh_ctl_log_mutex);
@@ -2587,7 +2605,9 @@ int
 tmesh_ctl_client_connect(const char *spec)
 {
   struct sockaddr_in sin;
+#ifndef WIN32
   struct sockaddr_un sun;
+#endif /* !WIN32 */
   int fd;
 
   if (!strncmp(spec, "tcp:", 4)) {
@@ -2600,11 +2620,12 @@ tmesh_ctl_client_connect(const char *spec)
     sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     sin.sin_port = htons(atoi(spec + 4));
     if (connect(fd, (struct sockaddr *) &sin, sizeof(sin)) < 0) {
-      close(fd);
+      tme_socket_close(fd);
       return (-1);
     }
     return (fd);
   }
+#ifndef WIN32
   if (!strncmp(spec, "unix:", 5)) {
     fd = socket(AF_UNIX, SOCK_STREAM, 0);
     if (fd < 0) {
@@ -2619,6 +2640,7 @@ tmesh_ctl_client_connect(const char *spec)
     }
     return (fd);
   }
+#endif /* !WIN32 */
   return (-1);
 }
 
@@ -2666,7 +2688,7 @@ tmesh_ctl_client_readline(int fd, char **_buf, size_t *_len, const struct timeva
       }
     }
     rc = recv(fd, tmp, sizeof(tmp), 0);
-    if (rc < 0 && errno == EINTR) {
+    if (rc < 0 && tme_socket_errno() == TME_SOCKET_EINTR) {
       continue;
     }
     if (rc <= 0) {
@@ -2803,7 +2825,7 @@ tmesh_ctl_client(int argc, char **argv)
   reqstr[reqlen + 1] = '\0';
   if (!tmesh_ctl_send_all(fd, reqstr, reqlen + 1)) {
     fprintf(stderr, "%s --ctl: can't send to %s\n", argv0, spec);
-    close(fd);
+    tme_socket_close(fd);
     return (2);
   }
   free(reqstr);
@@ -2868,29 +2890,7 @@ tmesh_ctl_client(int argc, char **argv)
   }
   fflush(stdout);
   free(buf);
-  close(fd);
+  tme_socket_close(fd);
   return (ret);
 }
 
-#else  /* WIN32 */
-
-void
-tmesh_ctl_start(const char *spec, int (*command) _TME_P((const char *, char **)))
-{
-  fprintf(stderr, "%s: --control isn't supported on Windows\n", argv0);
-  exit(1);
-}
-
-int
-tmesh_ctl_client(int argc, char **argv)
-{
-  fprintf(stderr, "%s: --ctl isn't supported on Windows\n", argv0);
-  return (2);
-}
-
-void
-tmesh_ctl_log(const char *element, unsigned long level, int err, const char *message)
-{
-}
-
-#endif /* WIN32 */
