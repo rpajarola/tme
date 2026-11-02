@@ -41,6 +41,12 @@ _TME_RCSID("$Id: posix-serial.c,v 1.11 2007/08/24 00:57:01 fredette Exp $");
 #include <unistd.h>
 #include <fcntl.h>
 #include <stdio.h>
+#ifdef WIN32
+#include <windows.h>
+#include <io.h>
+#undef TME_EVENT_HANDLE
+#define TME_EVENT_HANDLE(hand) ((HANDLE) _get_osfhandle(hand))
+#endif
 #ifndef WIN32
 #include <termios.h>
 #include <sys/ioctl.h>
@@ -639,7 +645,9 @@ _tme_posix_serial_config(struct tme_serial_connection *conn_serial, struct tme_s
       tme_log(&element->tme_element_log_handle, 0, TME_OK,
 	      (&element->tme_element_log_handle,
 	       "GetCommState failed with error %d.", GetLastError()));
-      return (2);
+
+      /* not a serial port, so there is nothing to configure: */
+      continue;
     }
     
     //  Fill in some DCB values and set the com state: 
@@ -1191,10 +1199,11 @@ TME_ELEMENT_SUB_NEW_DECL(tme_host_posix,serial) {
 	     timeouts.WriteTotalTimeoutConstant));
   } else {
       //  Handle the error.
+      /* not a serial port (a pipe, a file or a console), so there
+	 are no timeouts to set: */
       tme_log(&element->tme_element_log_handle, 0, TME_OK,
 	      (&element->tme_element_log_handle,
 	       "GetCommTimeout failed with error %d.", GetLastError()));
-      return (2);
   }    
 #endif
   serial->tme_posix_serial_emulate_break = emulate_break;

@@ -46,6 +46,9 @@ _TME_RCSID("$Id: tmesh.c,v 1.4 2009/08/30 17:06:38 fredette Exp $");
 #include <string.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#ifdef WIN32
+#include <fcntl.h>		/* _O_BINARY */
+#endif /* WIN32 */
 #ifdef TMESH_WINDOW
 #include "tmesh-window.h"
 #endif /* TMESH_WINDOW */
@@ -960,6 +963,11 @@ main(int argc, char **argv)
   edit_path = NULL;
   shell = FALSE;
   window_script = NULL;
+#ifdef WIN32
+  /* open files in binary mode, or disk and ROM images get their CR/LF
+     bytes translated: */
+  _set_fmode(_O_BINARY);
+#endif /* WIN32 */
   argv0_full = argv[0];
   if ((argv0 = strrchr(argv[0], '/')) == NULL) argv0 = argv[0]; else argv0++;
 
