@@ -3,8 +3,9 @@
 tme is packaged as `tme-rp` (called `tme` before 1.0.0): a `.deb` for
 Debian and Ubuntu (amd64 and arm64, built on Ubuntu 24.04, published in
 the shared apt repository [rpajarola/apt](https://github.com/rpajarola/apt)),
-a `.pkg` for macOS, and a Homebrew formula in
-[rpajarola/homebrew-tap](https://github.com/rpajarola/homebrew-tap).
+a `.pkg` for macOS, a Homebrew formula in
+[rpajarola/homebrew-tap](https://github.com/rpajarola/homebrew-tap), and a
+zip for Windows.
 The `.deb` conflicts with, replaces and provides `tme`, so it replaces
 an installed `tme` package. The programs keep their names (`tmesh` and
 the `tme-*` tools).
@@ -34,6 +35,10 @@ brew install rpajarola/tap/tme-rp
 
 or the `.pkg` from a release: `sudo installer -pkg tme-rp-<version>-arm64.pkg -target /`
 (the package is not signed, so double-clicking it needs right-click → Open).
+
+**Windows** (10 and later, 64-bit): unpack `tme-rp-<version>-windows-x86_64.zip`
+from a release anywhere, and run `tmesh.exe` from it. It is not signed,
+so SmartScreen asks before it runs the first time.
 
 ## What is installed
 
@@ -66,6 +71,19 @@ copies. It is built for the Mac's architecture (Apple silicon in CI);
 on Intel Macs, use Homebrew. Remove it with
 `sudo /usr/local/share/tme/uninstall.sh`.
 
+Windows (zip):
+
+```
+tme-rp-<version>-windows-x86_64/
+  tmesh.exe, tme-sun-idprom.exe, tme-sun-eeprom.exe, tme-sunlabel.exe, tme-mktap.exe
+  SDL2.dll                  # the official SDL 2 build for mingw
+  examples/
+  doc/                      # tme.html, tme.info, README, NEWS, COPYING, SDL2's license
+```
+
+The modules are linked into tmesh.exe, and so is zlib; the build checks
+that the programs need no other DLLs than Windows' own and SDL2.dll.
+
 ## The icon
 
 tme's icon (a robot emu whose body is a SPARCstation IPC-like
@@ -93,6 +111,21 @@ brew install autoconf automake libtool pkgconf texinfo sdl2
 packaging/build-pkg.sh      # dist/tme-rp-<version>-<arch>.pkg
 ```
 
+Windows, in an MSYS2 UCRT64 shell:
+
+```
+pacman -S autoconf automake libtool make bison texinfo curl zip \
+  mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-zlib
+packaging/build-win.sh      # dist/tme-rp-<version>-windows-x86_64.zip
+```
+
+or cross-compiled, e.g. on macOS with `brew install mingw-w64` and Wine
+(which runs the programs that make sources during the build, and the
+checks at the end; set `CROSS_RUN` for another command). It downloads
+SDL2 (or set `SDL2_MINGW` to an unpacked `SDL2-devel-<version>-mingw`), and
+when cross-compiling, builds zlib. Like the other scripts, it configures
+and builds in the source tree.
+
 Both need nfpm for the `.deb` (`go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest`,
 or a release binary). The version is the git tag without its `v`, or
 `<configure version>~git<sha>`; set `VERSION` to override it.
@@ -109,7 +142,7 @@ gh release create v1.0.0 -R rpajarola/tme --generate-notes
 (`-R`, since this is a fork, and gh would otherwise use phabrics/tme.)
 
 The release workflow then attaches the source tarball (`make dist`), the
-`.deb`s and the `.pkg`, has
+`.deb`s, the `.pkg` and the Windows zip, has
 [rpajarola/apt](https://github.com/rpajarola/apt) rebuild the apt
 repository (from the `.deb`s of every release of every project in it),
 and updates the formula's URL and checksum in

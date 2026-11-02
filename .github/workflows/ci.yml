@@ -2,7 +2,8 @@
 # the displays from the libraries installed (the VNC display, rfb, needs
 # none), so each job installs only those for its displays and checks
 # that configure chose them and that tmesh can load them. macOS builds
-# with the SDL display. The packages
+# with the SDL display, and Windows (with MSYS2) builds the zip and tries
+# it. The packages
 # job builds the .deb and builds again from the make dist tarball, as
 # the release workflow does.
 name: ci
@@ -50,6 +51,63 @@ jobs:
           make -j"$(sysctl -n hw.ncpu)"
       - name: Check the displays
         run: .github/check-displays.sh rfb sdl
+
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      # configure and the build's shell scripts need LF line endings:
+      - name: Keep line endings
+        shell: pwsh
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v7
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          install: >-
+            autoconf
+            automake
+            bison
+            curl
+            git
+            libtool
+            make
+            texinfo
+            unzip
+            zip
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-zlib
+      # the zip's build checks that tmesh.exe runs, and loads its
+      # displays:
+      - name: Build
+        run: VERSION=0.0.0 packaging/build-win.sh
+      - name: Test
+        run: |
+          mkdir test
+          unzip -q -d test dist/tme-rp-*.zip
+          cd test/tme-rp-*/
+          # a Sun-2 without its PROM: the elements load from tmesh.exe,
+          # and the machine makes its IDPROM:
+          cat > sun2.cfg <<'EOF'
+          mainbus0: tme/machine/sun2 multibus idprom.bin
+          cpu0 at mainbus0: tme/ic/m68010
+          obio0 at mainbus0 obio: tme/generic/bus size 8MB
+          obmem0 at mainbus0 obmem: tme/generic/bus size 16MB
+          ram0 at obmem0 addr 0x0: tme/host/posix/memory ram 4MB
+          zs0 at obio0 addr 0x2000 ipl 6: tme/machine/sun2/zs
+          EOF
+          out=$(echo 'source sun2.cfg' | ./tmesh.exe --shell 2>&1)
+          echo "$out"
+          if grep -q 'sun2\.cfg:' <<< "$out"; then
+            exit 1
+          fi
+          test "$(wc -c < idprom.bin)" -eq 32
+      - uses: actions/upload-artifact@v7
+        with:
+          name: tme-windows-x86_64
+          path: dist/*.zip
 
   packages:
     runs-on: ubuntu-24.04

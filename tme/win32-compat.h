@@ -59,7 +59,7 @@
 #define mkdir(path, mode)	_mkdir(path)
 
 /* realpath(3), only with a NULL buffer; like realpath, it fails for a
-   file that doesn't exist: */
+   file that doesn't exist.  the path has forward slashes: */
 #define realpath(path, buf)	tme_win32_realpath(path)
 char *tme_win32_realpath(const char *path);
 

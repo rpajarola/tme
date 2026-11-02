@@ -33,13 +33,15 @@
    the window's own state is kept in tme's folder for such things:
 
 	macOS:   ~/Library/Application Support/tme/
+	Windows: %APPDATA%\tme\
 	others:  $XDG_CONFIG_HOME/tme/ (~/.config/tme/)
 
    "machines" there lists the scripts in the window's list, one per
    line, most recently used first.  "settings" has a line "last-dir
    FOLDER" for the folder last used in a file chooser, and a line
    "rom-dir FOLDER" for each folder that ROM images are looked for
-   in.  new machines are saved in ~/TME by default: */
+   in.  new machines are saved in ~/TME (%USERPROFILE%\TME) by
+   default: */
 
 #include <tme/common.h>
 
@@ -1350,7 +1352,7 @@ tmesh_config_resolve(const struct tmesh_config *config, const char *file)
 {
   char *path;
 
-  if (file[0] == '/' || config->tmesh_config_dir == NULL) {
+  if (tmesh_config_path_absolute(file) || config->tmesh_config_dir == NULL) {
     return (tme_strdup(file));
   }
   path = tme_new(char, strlen(config->tmesh_config_dir) + strlen(file) + 2);
@@ -1365,7 +1367,7 @@ tmesh_config_shorten(const struct tmesh_config *config, const char *path)
 {
   size_t length;
 
-  if (config->tmesh_config_dir != NULL && path[0] == '/') {
+  if (config->tmesh_config_dir != NULL && tmesh_config_path_absolute(path)) {
     length = strlen(config->tmesh_config_dir);
     if (strncmp(path, config->tmesh_config_dir, length) == 0
 	&& path[length] == '/'
@@ -2230,7 +2232,7 @@ tmesh_config_check(const struct tmesh_config *config)
     }
     file = tmesh_config_word(config, files[i].tmesh_config_file_line, files[i].tmesh_config_file_arg);
     path = tmesh_config_resolve(config, file);
-    if ((file[0] != '/' && config->tmesh_config_dir == NULL)
+    if ((!tmesh_config_path_absolute(file) && config->tmesh_config_dir == NULL)
 	|| !_tmesh_config_exists(path)) {
 
       /* a ROM image in a ROM folder is copied into the machine's
@@ -2272,6 +2274,22 @@ tmesh_config_check(const struct tmesh_config *config)
     problem = TRUE;
   }
   return (problem ? tme_strdup(text) : NULL);
+}
+
+/* this returns nonzero if a path is absolute (on Windows, also with a
+   drive letter, or a backslash): */
+int
+tmesh_config_path_absolute(const char *path)
+{
+#ifdef WIN32
+  if (path[0] == '\\'
+      || (((path[0] >= 'A' && path[0] <= 'Z') || (path[0] >= 'a' && path[0] <= 'z'))
+	  && path[1] == ':'
+	  && (path[2] == '/' || path[2] == '\\'))) {
+    return (TRUE);
+  }
+#endif /* WIN32 */
+  return (path[0] == '/');
 }
 
 /* this makes a folder, and its parents.  it returns nonzero if the
@@ -2380,8 +2398,26 @@ _tmesh_config_home(void)
 {
   const char *home;
 
+#ifdef WIN32
+  static char *profile;
+  char *p;
+
+  /* (with forward slashes, which Windows takes as well, and which the
+     paths are split at here): */
+  home = getenv("USERPROFILE");
+  if (profile == NULL && home != NULL && *home != '\0') {
+    profile = tme_strdup(home);
+    for (p = profile; *p != '\0'; p++) {
+      if (*p == '\\') {
+	*p = '/';
+      }
+    }
+  }
+  return (profile != NULL ? profile : ".");
+#else  /* !WIN32 */
   home = getenv("HOME");
   return (home != NULL && *home != '\0' ? home : ".");
+#endif /* !WIN32 */
 }
 
 /* this returns the folder of the window's state, making it if
@@ -2392,14 +2428,30 @@ _tmesh_config_state_dir(void)
   static char *dir;
   const char *xdg;
   char path[4096];
+#ifdef WIN32
+  char *p;
+#endif /* WIN32 */
 
   if (dir != NULL) {
     return (dir);
   }
-#ifdef __APPLE__
+#if defined(WIN32)
+  xdg = getenv("APPDATA");
+  if (xdg != NULL && xdg[0] != '\0') {
+    snprintf(path, sizeof(path), "%s/tme", xdg);
+    for (p = path; *p != '\0'; p++) {
+      if (*p == '\\') {
+	*p = '/';
+      }
+    }
+  }
+  else {
+    snprintf(path, sizeof(path), "%s/tme", _tmesh_config_home());
+  }
+#elif defined(__APPLE__)
   xdg = NULL;
   snprintf(path, sizeof(path), "%s/Library/Application Support/tme", _tmesh_config_home());
-#else  /* !__APPLE__ */
+#else  /* !WIN32 && !__APPLE__ */
   xdg = getenv("XDG_CONFIG_HOME");
   if (xdg != NULL && xdg[0] == '/') {
     snprintf(path, sizeof(path), "%s/tme", xdg);
@@ -2407,7 +2459,7 @@ _tmesh_config_state_dir(void)
   else {
     snprintf(path, sizeof(path), "%s/.config/tme", _tmesh_config_home());
   }
-#endif /* !__APPLE__ */
+#endif /* !WIN32 && !__APPLE__ */
   (void) xdg;
   tmesh_config_make_dirs(path);
   dir = tme_strdup(path);

@@ -50,10 +50,20 @@ tme_win32_realpath(const char *path)
 {
   char *full;
 
+  char *p;
+
   full = _fullpath(NULL, path, 0);
   if (full != NULL && _access(full, 0) != 0) {
     free(full);
     full = NULL;
+  }
+
+  /* with forward slashes, which Windows takes as well, and which paths
+     are split at elsewhere: */
+  for (p = full; p != NULL && *p != '\0'; p++) {
+    if (*p == '\\') {
+      *p = '/';
+    }
   }
   return (full);
 }

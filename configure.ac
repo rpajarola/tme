@@ -533,6 +533,13 @@ AC_CHECK_HEADER([zlib.h],
 	[ZLIB_LIBS="-lz"
 	 AC_DEFINE([HAVE_ZLIB], [1], [Define if you have zlib.])]
   )])
+dnl on Windows, statically, so that tmesh.exe needs no zlib1.dll:
+if test "x${WIN32}" = xyes && test "x${ZLIB_LIBS}" != x; then
+   zlib_a=`${CC} -print-file-name=libz.a`
+   if test -f "${zlib_a}"; then
+      ZLIB_LIBS="${zlib_a}"
+   fi
+fi
 AC_SUBST([ZLIB_LIBS])
 
 AC_CHECK_LIB(

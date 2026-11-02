@@ -1327,7 +1327,7 @@ _tmesh_window_disk_missing(const struct tmesh_config *config, const struct tmesh
   }
 
   /* (an unsaved machine's disk images go in the folder it's saved in.)  */
-  if (drive->tmesh_config_drive_file[0] != '/' && config->tmesh_config_dir == NULL) {
+  if (!tmesh_config_path_absolute(drive->tmesh_config_drive_file) && config->tmesh_config_dir == NULL) {
     return (TRUE);
   }
   path = tmesh_config_resolve(config, drive->tmesh_config_drive_file);
@@ -1385,7 +1385,7 @@ _tmesh_window_files(struct tmesh_config *config)
        name in the folder: */
     else if (files[i].tmesh_config_file_kind == TMESH_CONFIG_FILE_ROM) {
       from = NULL;
-      if (file[0] == '/' && stat(path, &st) == 0) {
+      if (tmesh_config_path_absolute(file) && stat(path, &st) == 0) {
 	from = tme_strdup(path);
       }
       else if (strchr(file, '/') == NULL && stat(path, &st) != 0) {
@@ -1669,7 +1669,7 @@ _tmesh_window_file_status(const struct tmesh_config_file *file)
   word = tmesh_config_word(ui.config, file->tmesh_config_file_line, file->tmesh_config_file_arg);
   path = tmesh_config_resolve(ui.config, word);
   if (stat(path, &st) == 0) {
-    if (file->tmesh_config_file_kind == TMESH_CONFIG_FILE_ROM && word[0] == '/') {
+    if (file->tmesh_config_file_kind == TMESH_CONFIG_FILE_ROM && tmesh_config_path_absolute(word)) {
       snprintf(text, sizeof(text), "(copied into the machine's folder when it's saved)");
     }
     else {

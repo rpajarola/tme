@@ -221,6 +221,7 @@ char *tmesh_config_check _TME_P((const struct tmesh_config *));
 
 /* files and folders: */
 int tmesh_config_make_dirs _TME_P((const char *));
+int tmesh_config_path_absolute _TME_P((const char *));
 int tmesh_config_create_disk _TME_P((const char *, long long, char **));
 int tmesh_config_copy_file _TME_P((const char *, const char *, char **));
 int tmesh_config_write_macros _TME_P((const char *, char **));

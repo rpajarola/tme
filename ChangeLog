@@ -1,3 +1,37 @@
+2026-11-02  Rico Pajarola  <rp@servium.ch>
+
+	* configure.ac, tme/win32-compat.h, tme/socket.h, libtme/win32.c:
+	Native Windows builds again, with mingw-w64: Windows 10 and later,
+	the modules built into tmesh.exe, the sdl, udp and rfb hosts, and
+	zlib linked in.  When cross-compiling, the programs that make
+	sources at build time run with $(CROSS_RUN), e.g. wine.
+
+	* libtme/event.c: event_wait() on Windows waits for sockets with
+	WSAPoll(), and checks pipes, consoles and files itself.
+
+	* libtme/win32.c (tme_win32_stdin_pump): Standard input, when it is
+	a pipe or the console of a serial element, is read by a thread
+	into a pipe that event_wait() can wait for; a console is put in
+	raw mode with VT input.
+
+	* host/eth/udp/udp-eth.c, host/display/rfb/rfb-display.c,
+	tmesh/tmesh-ctl.c, tmesh/tmesh-mcp.c: Winsock, through
+	tme/socket.h; TCP ports only on Windows.
+
+	* host/display/sdl/sdl-files.c, tmesh/tmesh-window.c,
+	host/display/display-menu.c, host/display/display-capture.c: The
+	Windows file dialogs, ShellExecute, CreateProcess, and ffmpeg
+	through cmd.exe.
+
+	* tmesh/tmesh-config.c: The machine window's state is in
+	%APPDATA%\tme, and paths with drive letters are absolute.
+
+	* packaging/build-win.sh, .github/workflows/ci.yml,
+	.github/workflows/release.yml: A zip for Windows, built and tried
+	in CI with MSYS2, and attached to releases.
+
+	* tme/tme.texi, README, packaging/README.md: Documented Windows.
+
 2026-10-30  Rico Pajarola  <rp@servium.ch>
 
 	* Release 1.2.5.

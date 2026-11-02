@@ -238,10 +238,12 @@ the NFTables section below for a caveat, if you wish to use TAP/NAT
 for Ethernet access.
 
 @item
-Windows - Preliminary support for building/running on Windows
-platforms is provided through Cygwin. It should work out of the
-box. See below for details. Native (MinGW) builds are no longer
-supported. Ethernet over UDP works on Cygwin.
+Windows - 64-bit Windows 10 and later, natively: a zip with
+@code{tmesh.exe}, the tools and SDL is attached to each release
+(@pxref{Windows}). It has the SDL and VNC displays, Ethernet over UDP,
+serial consoles on the Windows console, and the control socket and
+MCP server on TCP ports. Tap and BPF Ethernet and Unix sockets are not
+supported there. Cygwin builds should also work.
 
 @item
 Other - It should work on any POSIX platforms, sans whatever features
@@ -438,6 +440,44 @@ TME_MODULE_PATH. The program uses the install path directly, but it
 can still be set to allow alternative directories to be used as
 well. This may be taken out at some point as it might be a security
 risk.
+
+@menu
+* Windows::
+@end menu
+
+@node Windows
+@subsection Windows
+@cindex Windows
+
+The Windows zip (@file{tme-rp-@var{version}-windows-x86_64.zip}, from
+a release) needs no installation: unpack it anywhere, and run
+@code{tmesh.exe} from it, from a Command Prompt or PowerShell, or by
+double-clicking it for the machine window. The modules are built into
+@code{tmesh.exe}, so @code{SDL2.dll} is the only file it needs beside
+it. The examples are in @file{examples}, and this manual in
+@file{doc\tme.html}.
+
+Write paths in tmesh scripts with forward slashes, which Windows takes
+as well. A
+serial console on standard input and output (@code{device -}) puts the
+Windows console in raw mode, with the escape sequences of keys like
+the arrows, while tmesh runs. @option{--control}, @option{--ctl} and
+@option{--mcp} take @code{tcp:@var{port}} only. The machine window
+keeps its list of machines and its settings in @file{%APPDATA%\tme},
+and saves new machines in @file{%USERPROFILE%\TME} by default.
+
+@code{packaging/build-win.sh} builds the zip, natively in an MSYS2
+UCRT64 shell, or cross-compiled with mingw-w64 (e.g. on macOS, with
+@code{brew install mingw-w64}), where the programs that make sources
+during the build run under Wine. It downloads SDL. By hand, configure
+with:
+
+@example
+./configure --disable-shared --enable-hosts="sdl udp rfb"
+@end example
+
+and, when cross-compiling, @option{--host=x86_64-w64-mingw32} and
+@code{CROSS_RUN=wine}.
 
 @node Running
 @section Running
@@ -1256,7 +1296,8 @@ It is enabled with @option{--control}:
 tmesh --control unix:/tmp/tme.sock -c tme.cfg
 @end example
 
-@option{--control tcp:@var{port}} listens on 127.0.0.1 instead; port 0
+@option{--control tcp:@var{port}} listens on 127.0.0.1 instead (on
+Windows, only this one works); port 0
 picks a free port, which is printed at startup.  There is no
 authentication: anyone who can connect can control the machine, so a
 TCP socket only listens on the loopback address, and a Unix socket is

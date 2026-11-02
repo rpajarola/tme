@@ -51,12 +51,13 @@ Source tarballs (tme-$version.tar.gz, with configure already generated, so no au
 The original upstream tarballs were available at ftp://ftp.phabrics.com/phabrics/contrib/tme-$version.tgz.
 
 Packages:
-Packages for Debian and Ubuntu, and for macOS, are attached to each release at https://github.com/rpajarola/tme/releases, and available from -
+Packages for Debian and Ubuntu, for macOS, and a zip for Windows, are attached to each release at https://github.com/rpajarola/tme/releases, and available from -
   Debian and Ubuntu (amd64, arm64): the apt repository at https://rpajarola.github.io/apt/, then
     sudo apt install tme-rp
   macOS: the Homebrew tap at https://github.com/rpajarola/homebrew-tap -
     brew install rpajarola/tap/tme-rp
   or the macOS installer package from a release, which needs no Homebrew.
+  Windows (10 and later, 64-bit): the zip from a release; unpack it and run tmesh.exe from it.
 See packaging/README.md for what is installed and how the packages are built.
 
 Installation:
