@@ -100,6 +100,11 @@ _TME_RCSID("$Id: sun-sc.c,v 1.8 2010/06/05 14:12:53 fredette Exp $");
 #define TME_SUN_SC_ICR_PUT(sun_sc, icr)	\
   TME_SUN_SC_REG16_PUT(sun_sc, TME_SUN_SC_REG_ICR, icr)
 
+/* the Multibus has only 20 address lines, so the card drives only
+   the low 20 bits of its DMA address register.  SunOS 1.1 loads the
+   register with full DVMA virtual addresses (0xf0xxxx): */
+#define TME_SUN_SC_DMA_BUS_ADDRESS(address)	((address) & 0xfffff)
+
 /* the size of the cycle callout ring buffer: */
 #define TME_SUN_SC_CYCLE_RING_SIZE	(4)
 
@@ -564,7 +569,7 @@ _tme_sun_sc_callout(struct tme_sun_sc *sun_sc, int new_callouts)
 	    ? ((*conn_bus->tme_bus_tlb_fill)
 	       (conn_bus,
 		&tlb_local,
-		address,
+		TME_SUN_SC_DMA_BUS_ADDRESS(address),
 		cycle_type))
 	    : TME_OK);
 	
@@ -587,7 +592,7 @@ _tme_sun_sc_callout(struct tme_sun_sc *sun_sc, int new_callouts)
 	/* get the number of bytes available in this TLB entry: */
 	avail
 	  = ((tlb->tme_bus_tlb_addr_last
-	      - address)
+	      - TME_SUN_SC_DMA_BUS_ADDRESS(address))
 	     + 1);
 	if (avail == 0
 	    || avail > resid) {
@@ -618,7 +623,7 @@ _tme_sun_sc_callout(struct tme_sun_sc *sun_sc, int new_callouts)
 	  /* do the SCSI DMA sequence with the TLB fast transfer
              buffer: */
 	  sun_sc_cycle->tme_sun_sc_cycle_dma.tme_scsi_dma_in
-	    = emulator_off + address;
+	    = emulator_off + TME_SUN_SC_DMA_BUS_ADDRESS(address);
 	}
 
 	/* otherwise, this TLB entry does not allow fast transfers: */
@@ -631,7 +636,7 @@ _tme_sun_sc_callout(struct tme_sun_sc *sun_sc, int new_callouts)
 					   /* XXX FIXME this is not thread-safe: */
 					   tlb,
 					   TME_BUS_CYCLE_READ,
-					   address,
+					   TME_SUN_SC_DMA_BUS_ADDRESS(address),
 					   (icr
 					    & TME_SUN_SC_ICR_WORD_MODE));
 	    assert (rc == TME_OK);
@@ -639,7 +644,7 @@ _tme_sun_sc_callout(struct tme_sun_sc *sun_sc, int new_callouts)
 
 	  /* do the SCSI DMA sequence with our internal DMA buffer: */
 	  sun_sc_cycle->tme_sun_sc_cycle_dma.tme_scsi_dma_in
-	    = emulator_off + address;
+	    = &sun_sc->tme_sun_sc_int_dma[0];
 	  avail
 	    = ((icr
 		& TME_SUN_SC_ICR_WORD_MODE)
@@ -1375,7 +1380,7 @@ do {						\
 				       /* XXX FIXME this is not thread-safe: */
 				       tlb,
 				       TME_BUS_CYCLE_WRITE,
-				       address,
+				       TME_SUN_SC_DMA_BUS_ADDRESS(address),
 				       (icr_old
 					& TME_SUN_SC_ICR_WORD_MODE));
 	assert (rc == TME_OK);
