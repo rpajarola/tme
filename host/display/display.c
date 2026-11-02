@@ -439,6 +439,21 @@ _tme_screen_xlat_set(struct tme_screen *screen) {
   screen->tme_screen_fb_xlat = fb_xlat_a->tme_fb_xlat_func;
 }
 
+/* this returns nonzero if the emulated framebuffer, multiplied by
+   factor, fits on the host's screen (whose height already leaves out
+   any menu bar and status line): */
+static int
+_tme_screen_fits(const struct tme_display *display,
+		 const struct tme_screen *screen,
+		 const struct tme_fb_connection *conn_fb_other,
+		 unsigned long factor)
+{
+  return ((conn_fb_other->tme_fb_connection_width * factor
+	   <= (unsigned long) display->tme_screen_width * screen->tme_screen_scale)
+	  && (conn_fb_other->tme_fb_connection_height * factor
+	      <= (unsigned long) display->tme_screen_height * screen->tme_screen_scale));
+}
+
 /* this is called for a configuration request: */
 int
 _tme_screen_configure(struct tme_screen *screen)
@@ -469,12 +484,15 @@ _tme_screen_configure(struct tme_screen *screen)
       ( display->tme_screen_width * screen-> tme_screen_scale *
 	display->tme_screen_height * screen-> tme_screen_scale );
 
-    /* if this is at least 70%, halve the emulated framebuffer, else
-       if this is 30% or less, double the emulated framebuffer: */
-    if (percentage >= 70) {
+    /* halving drops every other row and column, which makes
+       monochrome text unreadable, so halve the emulated framebuffer
+       only if it doesn't fit on the host's screen.  double it if it
+       is 30% or less of the host's screen and still fits doubled: */
+    if (!_tme_screen_fits(display, screen, conn_fb_other, 1)) {
       scale = TME_FB_XLAT_SCALE_HALF;
     }
-    else if (percentage <= 30) {
+    else if (percentage <= 30
+	     && _tme_screen_fits(display, screen, conn_fb_other, 2)) {
       scale = TME_FB_XLAT_SCALE_DOUBLE;
     }
     else {
