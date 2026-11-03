@@ -107,10 +107,12 @@ jobs:
             curl
             git
             libtool
+            pkgconf
             make
             texinfo
             zip
             mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-pkgconf
             mingw-w64-ucrt-x86_64-zlib
       - name: Build
         run: VERSION="${TAG#v}" packaging/build-win.sh

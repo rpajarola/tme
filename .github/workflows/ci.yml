@@ -73,11 +73,13 @@ jobs:
             curl
             git
             libtool
+            pkgconf
             make
             texinfo
             unzip
             zip
             mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-pkgconf
             mingw-w64-ucrt-x86_64-zlib
       # the zip's build checks that tmesh.exe runs, and loads its
       # displays:
