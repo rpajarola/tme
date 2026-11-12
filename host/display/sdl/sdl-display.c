@@ -986,6 +986,8 @@ TME_ELEMENT_SUB_NEW_DECL(tme_host_sdl,display) {
     return (ENXIO);
   }
   atexit(SDL_Quit);
+  /* SDL2 inhibits the screensaver by default; don't: */
+  SDL_EnableScreenSaver();
   SDL_StartTextInput();
 
   /* start our data structure: */

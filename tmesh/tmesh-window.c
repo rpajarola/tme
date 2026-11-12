@@ -2375,6 +2375,8 @@ tmesh_window_run(const char *edit_path, int running, char **_script)
     fprintf(stderr, "tmesh: could not open the machine window: %s\n", SDL_GetError());
     return (FALSE);
   }
+  /* SDL2 inhibits the screensaver by default; don't: */
+  SDL_EnableScreenSaver();
   ui.window = SDL_CreateWindow("tme", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
 			       TMESH_WINDOW_W, TMESH_WINDOW_H,
 			       SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
