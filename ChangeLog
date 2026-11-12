@@ -1,3 +1,28 @@
+2026-11-12  Rico Pajarola  <rp@servium.ch>
+
+	* Release 1.2.6.
+
+	* configure.ac: Bumped version to 1.2.6.
+
+	* host/display/sdl/sdl-display.c, tmesh/tmesh-window.c: Call
+	SDL_EnableScreenSaver(), so that the host's screensaver is not
+	inhibited while a window is open.
+
+	* bus/multibus/sun-sc.c: The DMA address the card drives on the
+	Multibus is 20 bits, for SunOS 1.1, which loads full DVMA
+	addresses; the non-fast-TLB path uses the internal DMA buffer.
+
+	* host/display/display.c: Halve the framebuffer only when it
+	doesn't fit on the host's screen, so 1-bit text stays readable.
+
+	* tmesh/tmesh-config.c, tmesh/tmesh-config.h,
+	tmesh/tmesh-window.c: In the machine window, disks can share a
+	SCSI ID as logical units.
+
+	* host/posix-serial.c, tmesh/tmesh.c: Native
+	Windows: files in binary mode, and serial elements on devices
+	that aren't serial ports.
+
 2026-11-02  Rico Pajarola  <rp@servium.ch>
 
 	* configure.ac, tme/win32-compat.h, tme/socket.h, libtme/win32.c:
