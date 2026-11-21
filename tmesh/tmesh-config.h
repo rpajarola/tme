@@ -142,7 +142,8 @@ struct tmesh_config_drive {
 #define TMESH_CONFIG_NET_UDP		(1)
 #define TMESH_CONFIG_NET_BPF		(2)
 #define TMESH_CONFIG_NET_TAP		(3)
-#define TMESH_CONFIG_NET_OTHER		(4)
+#define TMESH_CONFIG_NET_SLIRP		(4)
+#define TMESH_CONFIG_NET_OTHER		(5)
 
 /* the Ethernet interface: */
 struct tmesh_config_net {

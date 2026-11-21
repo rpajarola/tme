@@ -113,7 +113,8 @@ static const char *_tmesh_window_idle_labels[] = {
 };
 
 static const char *_tmesh_window_nets[] = {
-  "Not connected", "Over UDP, to another emulator", "A host interface (BPF)", "A tap interface"
+  "Not connected", "Over UDP, to another emulator", "A host interface (BPF)", "A tap interface",
+  "NAT, through the host (slirp)"
 };
 
 /* the text of an edited text field: */
@@ -2030,6 +2031,17 @@ _tmesh_window_page_network(void)
     mu_text(ctx, "The interface is connected to a new tap interface on the host, "
 	    "with this address.  Making one needs root, or on Linux, the "
 	    "cap_net_admin capability.");
+    break;
+  case TMESH_CONFIG_NET_SLIRP:
+    _tmesh_window_row(1, full);
+    mu_label(ctx, "");
+    mu_text(ctx, "The interface is on a private network, 10.0.2.0/24, behind a NAT "
+	    "in tme that reaches out through the host's own connections, like "
+	    "QEMU's user networking.  This needs no permissions.  Configure the "
+	    "machine with DHCP, or as 10.0.2.15 with gateway 10.0.2.2 and DNS "
+	    "server 10.0.2.3.  The host can't reach the machine, except through "
+	    "ports forwarded on the Script page, e.g. \"forward tcp 2323 23\" "
+	    "for telnet to localhost port 2323.");
     break;
   case TMESH_CONFIG_NET_NONE:
     _tmesh_window_row(1, full);

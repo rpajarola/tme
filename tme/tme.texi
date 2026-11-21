@@ -99,6 +99,7 @@ Networking
 * IPv4 Network Address Translation::
 * Proxy ARP/NDP::
 * Ethernet over UDP::
+* User-Mode Networking::
 * Network Descriptions::
 * Network Services::
 
@@ -687,6 +688,7 @@ is the topic of the next section.
 * IPv4 Network Address Translation::
 * Proxy ARP/NDP::
 * Ethernet over UDP::
+* User-Mode Networking::
 * Network Descriptions::
 * Network Services::
 @end menu
@@ -695,7 +697,9 @@ is the topic of the next section.
 @subsection Ethernet
 
 Ethernet configuration can be done in a couple of ways: BPF or TAP
-device.
+device.  Without either, a machine can reach the network through a NAT
+in tme, with no privileges (@pxref{User-Mode Networking}), or
+other machines and emulators over UDP (@pxref{Ethernet over UDP}).
 
 The BPF device is the original method for ethernet configuration. It
 still works & is still supported. Support for this method has also
@@ -1141,6 +1145,76 @@ remote machines onto a host network:
 
 @code{tap1: tme/host/tun/tap inet 10.0.77.1 netmask 255.255.255.0 bcast 10.0.77.255}
 @code{link2 at tap1: tme/host/udp/eth listen 192.168.0.1 4711}
+
+@node User-Mode Networking
+@subsection User-Mode Networking
+
+The slirp element connects a machine to the network through libslirp,
+the user-mode TCP/IP stack that QEMU's @code{-netdev user} uses.  The
+machine is on a private network behind a NAT inside tme, and its TCP
+and UDP connections go out as ordinary connections from tmesh, so this
+needs no TAP or BPF devices, no special privileges and nothing
+configured on the host.  It is the easiest way to give a machine
+access to the host's network and the Internet:
+
+@code{nat0 at le0: tme/host/slirp/eth}
+
+On the private network, by default 10.0.2.0/24, slirp is the gateway
+at 10.0.2.2, a DNS server at 10.0.2.3 that forwards to the host's
+resolver, and a DHCP (and BOOTP) server that hands out addresses from
+10.0.2.15.  A machine that doesn't use DHCP can be configured by hand
+as 10.0.2.15, with netmask 255.255.255.0, gateway 10.0.2.2 and DNS
+server 10.0.2.3.  Connections to 10.0.2.2 go to the host itself, on
+its loopback address.
+
+The machine can't be reached from outside, except through forwarded
+ports.  ICMP echo (ping) works only where the host lets unprivileged
+programs send it (on Linux, see @code{net.ipv4.ping_group_range}), and
+other ICMP and protocols other than TCP and UDP don't get out.
+libslirp 4.9.7 is included with tme, so nothing more needs to be
+installed.  The element isn't built for native Windows yet.
+
+@table @code
+@item net @var{address}/@var{bits}
+The private network.  The default is 10.0.2.0/24.  The gateway, DNS
+and DHCP addresses default to host 2, 3 and 15 on it.
+
+@item host @var{address}
+The gateway's address on the network.
+
+@item dns @var{address}
+The DNS server's address on the network.
+
+@item dhcp @var{address}
+The first address that DHCP hands out.
+
+@item hostname @var{name}
+The host name that DHCP gives the machine.
+
+@item tftp @var{directory}
+Serve the files in @var{directory} with TFTP, at the gateway address.
+With @code{bootfile}, this can netboot a machine whose boot ROM uses
+BOOTP or DHCP.  slirp doesn't answer RARP, which Sun boot PROMs use.
+
+@item bootfile @var{file}
+The boot file that DHCP and BOOTP replies name.
+
+@item restrict
+Isolate the machine: no connections out of the private network, except
+to the gateway's own services and through forwarded ports.
+
+@item forward tcp|udp [@var{host-address}] @var{host-port} [@var{address}] @var{port}
+Forward connections (or datagrams) to @var{host-port} on the host to
+@var{port} on the machine.  The host address defaults to 127.0.0.1, so
+that only the host itself can connect; give 0.0.0.0 to let any host
+connect.  The machine's address defaults to the first DHCP address.
+This can be repeated.
+@end table
+
+For example, this lets the host telnet to the machine with
+@code{telnet localhost 2323}, and ssh to it on port 2222:
+
+@code{nat0 at le0: tme/host/slirp/eth forward tcp 2323 23 forward tcp 2222 22}
 
 @node Network Descriptions
 @subsection Network Descriptions

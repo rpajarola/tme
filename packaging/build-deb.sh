@@ -23,7 +23,7 @@ if [ ! -x configure ]; then
 fi
 # The package has the SDL display, so configure must find SDL, instead
 # of leaving the display out:
-./configure --prefix=/usr --sysconfdir=/etc --enable-hosts="rfb sdl tun bsd udp"
+./configure --prefix=/usr --sysconfdir=/etc --enable-hosts="rfb sdl tun bsd udp slirp"
 make -j"$(nproc)"
 rm -rf dist/stage
 make install DESTDIR="$PWD/dist/stage"

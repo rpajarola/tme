@@ -296,9 +296,9 @@ static const char * const _tmesh_config_host_prefixes[] = { "disk", "cdrom", "ta
 
 /* the elements that connect an Ethernet interface to the host: */
 static const char * const _tmesh_config_net_modules[] = {
-  NULL, "tme/host/udp/eth", "tme/host/bsd/bpf", "tme/host/tun/tap"
+  NULL, "tme/host/udp/eth", "tme/host/bsd/bpf", "tme/host/tun/tap", "tme/host/slirp/eth"
 };
-static const char * const _tmesh_config_net_prefixes[] = { NULL, "link", "bpf", "tap" };
+static const char * const _tmesh_config_net_prefixes[] = { NULL, "link", "bpf", "tap", "nat" };
 
 /* this returns nonzero if a character is part of a word: */
 static int
@@ -2195,6 +2195,7 @@ tmesh_config_summary(const struct tmesh_config *config)
 		  : net.tmesh_config_net_type == TMESH_CONFIG_NET_UDP ? "over UDP"
 		  : net.tmesh_config_net_type == TMESH_CONFIG_NET_BPF ? "a host interface"
 		  : net.tmesh_config_net_type == TMESH_CONFIG_NET_TAP ? "a tap interface"
+		  : net.tmesh_config_net_type == TMESH_CONFIG_NET_SLIRP ? "NAT (slirp)"
 		  : "connected"));
   }
   return (tme_strdup(text));

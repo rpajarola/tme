@@ -1,3 +1,28 @@
+2026-11-21  Rico Pajarola  <rp@servium.ch>
+
+	* host/eth/slirp/slirp-eth.c, host/eth/slirp/Makefile.am: Add
+	tme/host/slirp/eth, user-mode networking with libslirp, as QEMU's
+	-netdev user: the machine is on 10.0.2.0/24 behind a NAT, with a
+	gateway, DNS forwarder, DHCP server and optional TFTP server, and
+	needs no privileges.  "forward" forwards TCP and UDP ports from
+	the host to the machine, and "restrict" isolates it.
+
+	* host/eth/slirp/libslirp: libslirp 4.9.7, built into the module.
+	glib.h and glib.c are the few GLib functions that it uses, so that
+	neither libslirp nor GLib needs to be installed.
+
+	* configure.ac, host/eth/Makefile.am, tme/tme-plugins.txt: Build
+	the slirp host, except on native Windows.
+
+	* packaging/build-deb.sh, packaging/build-pkg.sh: The packages
+	have it.
+
+	* tmesh/tmesh-config.c, tmesh/tmesh-config.h, tmesh/tmesh-window.c:
+	The machine window can connect the Ethernet interface to a NAT.
+
+	* tme/tme.texi, .github/workflows/ci.yml: Document it, and check
+	that CI builds it.
+
 2026-11-12  Rico Pajarola  <rp@servium.ch>
 
 	* Release 1.2.6.

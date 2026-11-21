@@ -1,0 +1,21 @@
+This is libslirp 4.9.7, the user-mode TCP/IP stack that QEMU uses, from
+https://gitlab.freedesktop.org/slirp/libslirp (tag v4.9.7, the sources
+in its src/ directory).  It is built into tme's slirp module
+(tme/host/slirp/eth), so tme doesn't need libslirp or GLib installed.
+libslirp is under the BSD 3-clause license (see COPYRIGHT and LICENSE),
+with some files under the MIT license, as their headers say.
+
+The libslirp files are unchanged, except for:
+
+  libslirp-version.h  made from libslirp-version.h.in, as meson would
+  glib.h, glib.c      tme's own: the few GLib functions that libslirp
+                      uses, renamed so that they can't clash with GLib's.
+                      Running commands (slirp_add_exec) isn't supported.
+
+and libslirp.map, libslirp.test.map and libslirp-version.h.in are left
+out.  Makefile.am replaces meson.build.
+
+To update libslirp, copy a new release's src/*.c and src/*.h here,
+remake libslirp-version.h, update the file lists in Makefile.am, and
+add anything new from GLib that it uses to glib.h and glib.c (the build
+fails on a missing one).

@@ -37,6 +37,8 @@ jobs:
           make -j"$(nproc)"
       - name: Check the displays
         run: .github/check-displays.sh ${{ matrix.displays }}
+      - name: Check that slirp was built
+        run: test -f host/eth/slirp/tme_host_slirp.la
 
   macos:
     runs-on: macos-latest
@@ -47,7 +49,7 @@ jobs:
       - name: Build
         run: |
           autoreconf -fi
-          ./configure --enable-hosts="rfb sdl tun bsd udp"
+          ./configure --enable-hosts="rfb sdl tun bsd udp slirp"
           make -j"$(sysctl -n hw.ncpu)"
       - name: Check the displays
         run: .github/check-displays.sh rfb sdl
@@ -129,5 +131,5 @@ jobs:
           mkdir tarball
           tar xzf tme-*.tar.gz -C tarball
           cd tarball/tme-*
-          ./configure --enable-hosts="rfb sdl tun bsd udp"
+          ./configure --enable-hosts="rfb sdl tun bsd udp slirp"
           make -j"$(nproc)"

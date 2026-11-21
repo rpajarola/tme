@@ -25,7 +25,7 @@ fi
 # package has the SDL display, so configure must find SDL, instead of
 # leaving the display out:
 ./configure --prefix=/usr/local LDFLAGS="-Wl,-headerpad_max_install_names" \
-  --enable-hosts="rfb sdl tun bsd udp"
+  --enable-hosts="rfb sdl tun bsd udp slirp"
 make -j"$(sysctl -n hw.ncpu)"
 make install DESTDIR="$work/stage"
 

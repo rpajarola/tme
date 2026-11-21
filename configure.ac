@@ -801,7 +801,7 @@ AC_ARG_WITH(tme-host-displays,
 
 AC_SUBST(TME_FB_XLAT_DST)
 
-tme_host_types="rfb sdl tun bsd udp"
+tme_host_types="rfb sdl tun bsd udp slirp"
 
 for tme_host_type in ${tme_host_types}; do
     eval enable_${tme_host_type}=no
@@ -872,6 +872,25 @@ TME_ETH_HOSTS=
 if test "x${enable_udp}" = xyes && { test "x${ac_cv_header_sys_socket_h}" = xyes || test "x${WIN32}" = xyes; }; then
    TME_ETH_HOSTS="udp ${TME_ETH_HOSTS}"
 fi
+
+dnl slirp (user-mode NAT networking) is built with the libslirp in
+dnl host/eth/slirp/libslirp, which needs no GLib.  it isn't built for
+dnl native Windows yet.  on macOS, libslirp reads the DNS servers with
+dnl res_ninit():
+SLIRP_LIBS=
+if test "x${enable_slirp}" = xyes && test "x${WIN32}" = xyes; then
+   if test "x${tme_hosts_given}" = xyes; then
+      AC_MSG_ERROR([slirp isn't supported on native Windows yet: leave slirp out of --enable-hosts])
+   fi
+   enable_slirp=no
+fi
+if test "x${enable_slirp}" = xyes; then
+   case "${host_os}" in
+   darwin*) SLIRP_LIBS="-lresolv" ;;
+   esac
+   TME_ETH_HOSTS="slirp ${TME_ETH_HOSTS}"
+fi
+AC_SUBST(SLIRP_LIBS)
 
 AC_CHECK_HEADERS([linux/if_tun.h net/if_tap.h net/tap/if_tap.h net/if_tun.h],
 		 [if test "x${enable_tun}" = xyes; then
@@ -1687,6 +1706,8 @@ AC_CONFIG_FILES([Makefile
           host/display/sdl/Makefile
           host/eth/Makefile
           host/eth/udp/Makefile
+          host/eth/slirp/Makefile
+          host/eth/slirp/libslirp/Makefile
           host/eth/bsd/Makefile
           host/eth/tun/Makefile
           bus/Makefile
