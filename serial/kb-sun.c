@@ -92,6 +92,9 @@ struct tme_serial_kb_sun {
 
   /* the Num_Lock modifier: */
   int tme_serial_kb_sun_mod_num_lock;
+
+  /* the keycodes that are down, as the machine has been told: */
+  tme_uint8_t tme_serial_kb_sun_down[(KB_SUN_DATAOUT_IDLE + 7) / 8];
 };
 
 /* globals: */
@@ -349,19 +352,47 @@ _tme_kb_sun_map_add_post(struct tme_serial_kb *serial_kb,
 }
 
 /* this is called to get serial data from a keyboard event: */
-static tme_uint8_t
+static unsigned int
 _tme_kb_sun_event(struct tme_serial_kb *serial_kb,
-		  const struct tme_keyboard_event *event)
+		  const struct tme_keyboard_event *event,
+		  tme_uint8_t *data)
 {
-  tme_uint8_t data;
+  struct tme_serial_kb_sun *kb_sun;
+  tme_uint8_t keycode, mask;
+  unsigned int down_i;
+
+  /* recover our data structure: */
+  kb_sun = serial_kb->tme_serial_kb_type_state;
+
+  /* track which keys are down: */
+  keycode = event->tme_keyboard_event_keyval & KB_SUN_DATAOUT_KEYCODE_MASK;
+  mask = TME_BIT(keycode % 8);
+
+  /* a key press: */
+  if (event->tme_keyboard_event_type
+      != TME_KEYBOARD_EVENT_RELEASE) {
+    kb_sun->tme_serial_kb_sun_down[keycode / 8] |= mask;
+    data[0] = keycode;
+    return (1);
+  }
 
   /* Sun keyboard key-release data has the high bit set: */
-  data = event->tme_keyboard_event_keyval;
-  if (event->tme_keyboard_event_type
-      == TME_KEYBOARD_EVENT_RELEASE) {
-    data |= KB_SUN_DATAOUT_KEYCODE_RELEASE;
+  kb_sun->tme_serial_kb_sun_down[keycode / 8] &= ~mask;
+  data[0] = keycode | KB_SUN_DATAOUT_KEYCODE_RELEASE;
+
+  /* when the last key that is down is released, the keyboard also
+     sends IDLE.  software uses this to release any keys whose
+     releases it missed, for example while it was resetting the
+     keyboard: */
+  for (down_i = 0;
+       down_i < sizeof(kb_sun->tme_serial_kb_sun_down);
+       down_i++) {
+    if (kb_sun->tme_serial_kb_sun_down[down_i] != 0) {
+      return (1);
+    }
   }
-  return (data);
+  data[1] = KB_SUN_DATAOUT_IDLE;
+  return (2);
 }
 
 /* this initializes Sun serial keyboard emulation: */

@@ -58,6 +58,9 @@ _TME_RCSID("$Id: serial-kb.h,v 1.3 2006/09/30 12:35:01 fredette Exp $");
 #define  TME_SERIAL_KB_CALLOUT_KEYBOARD_CTRL	TME_BIT(4)
 #define  TME_SERIAL_KB_CALLOUT_KEYBOARD_READ	TME_BIT(5)
 
+/* the most serial data a type-specific event function can make: */
+#define TME_SERIAL_KB_EVENT_DATA_MAX		(2)
+
 /* types: */
 
 /* a serial keyboard: */
@@ -83,9 +86,12 @@ struct tme_serial_kb {
   int (*tme_serial_kb_type_map_add_post) _TME_P((struct tme_serial_kb *,
 						 _tme_const struct tme_keyboard_map *));
 
-  /* our type-specific event function: */
-  tme_uint8_t (*tme_serial_kb_type_event) _TME_P((struct tme_serial_kb *,
-						  _tme_const struct tme_keyboard_event *));
+  /* our type-specific event function.  it puts the serial data for
+     an event into the buffer, which has room for
+     TME_SERIAL_KB_EVENT_DATA_MAX bytes, and returns how many: */
+  unsigned int (*tme_serial_kb_type_event) _TME_P((struct tme_serial_kb *,
+						   _tme_const struct tme_keyboard_event *,
+						   tme_uint8_t *));
 
   /* our type-specific serial control function: */
   int (*tme_serial_kb_type_serial_ctrl) _TME_P((struct tme_serial_kb *,
