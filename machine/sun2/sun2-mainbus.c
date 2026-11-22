@@ -662,11 +662,11 @@ _tme_sun2_connections_new(struct tme_element *element, const char * const *args,
     /* fill in the generic bus connection: */
     if (which_bus == TME_SUN2_BUS_MBMEM) {
       conn_bus->tme_bus_subregions.tme_bus_subregion_address_last
-	= TME_SUN2_DVMA_SIZE_MBMEM;
+	= TME_SUN2_DVMA_SIZE_MBMEM - 1;
     }
     else if (which_bus == TME_SUN2_BUS_VME) {
       conn_bus->tme_bus_subregions.tme_bus_subregion_address_last
-	= TME_SUN2_DVMA_SIZE_VME;
+	= TME_SUN2_DVMA_SIZE_VME - 1;
     }
     conn_bus->tme_bus_signal = _tme_sun2_bus_signal;
     conn_bus->tme_bus_intack = NULL;
