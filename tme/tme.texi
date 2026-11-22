@@ -722,6 +722,20 @@ the external net is desired.
 It is possible to combine BPF and TAP devices to create NAT
 networks. See the section below on Network Descriptions.
 
+On a Multibus Sun-2, the Sun Intel Ethernet board
+(@code{tme/bus/multibus/sun-mie}) has a 256KB memory port on the
+Multibus, which must start at a multiple of 64KB.  Put it at 0x40000:
+
+@example
+mie0 memory 0x40000 at mbmem0 addr 0x40000
+@end example
+
+@noindent
+0x0-0x3ffff is the Multibus DVMA space, and 0x80000 and up has the
+SCSI and Ethernet registers and devices that SunOS probes for.  At
+0xa0000, for example, the port covers 0xc0000, and a GENERIC SunOS
+2.0 kernel finds a Sun-1 framebuffer, bwone0, that isn't there.
+
 @node PPP
 @subsection PPP
 

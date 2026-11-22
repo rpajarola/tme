@@ -46,7 +46,11 @@ scsibus0 at sc0: tme/scsi/bus
 ## the Sun Intel Ethernet Multibus board:
 ##
 ## NB that the mie "memory" attachment argument must match the
-## low 20 bits of the address of the memory's bus attachment:
+## low 20 bits of the address of the memory's bus attachment.
+## the board's memory port is 256KB, so put it at 0x40000, where it
+## doesn't cover anything that SunOS probes for: at 0xa0000 it would
+## cover 0xc0000, and a GENERIC SunOS 2.0 kernel would find a Sun-1
+## framebuffer (bwone0) that isn't there:
 ##
 # uncomment these lines if you have read/write permission on one
 # of your /dev/bpfN devices (on *BSD) OR have cap_net_raw+ep capability (on Linux)
@@ -54,7 +58,7 @@ scsibus0 at sc0: tme/scsi/bus
 #
 #mie0: tme/bus/multibus/sun-mie
 #mie0 csr at mbmem0 addr 0x88000 ipl 3
-#mie0 memory 0xa0000 at mbmem0 addr 0xa0000
+#mie0 memory 0x40000 at mbmem0 addr 0x40000
 #ie0 at mie0: tme/ic/i82586
 #bpf1 at ie0: tme/host/bsd/bpf delay 10000
 

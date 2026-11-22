@@ -131,7 +131,7 @@ static const struct tmesh_config_kind _tmesh_config_kinds[] = {
     "## the Ethernet board:\n"
     "mie0: tme/bus/multibus/sun-mie\n"
     "mie0 csr at mbmem0 addr 0x88000 ipl 3\n"
-    "mie0 memory 0xa0000 at mbmem0 addr 0xa0000\n"
+    "mie0 memory 0x40000 at mbmem0 addr 0x40000\n"
     "ie0 at mie0: tme/ic/i82586\n"
     "\n"
     "## the screen, keyboard and mouse:\n"
