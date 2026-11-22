@@ -258,6 +258,51 @@ _tme_z8530_rx_fifo_hold(struct tme_z8530_chan *chan)
 		  == TME_Z8530_WR1_RX_INT_SPCL)));
 }
 
+/* this updates a channel's receive Interrupt Pending bit for the
+   character now at the top of its Rx FIFO, if any, and returns any
+   needed callouts.  receive_first is nonzero iff that character is
+   the first one received since receive interrupts were enabled: */
+static int
+_tme_z8530_rx_ip_update(struct tme_z8530 *z8530,
+			struct tme_z8530_chan *chan,
+			int receive_first)
+{
+  tme_uint8_t rr3_ip_rx;
+  int ip_rx_set;
+
+  /* get the IP_RX bit for this channel: */
+  rr3_ip_rx = ((chan == &z8530->tme_z8530_chan_a)
+	       ? TME_Z8530_RR3_CHAN_A_IP_RX
+	       : TME_Z8530_RR3_CHAN_B_IP_RX);
+
+  /* see if the receive Interrupt Pending bit is supposed to be set: */
+  ip_rx_set = FALSE;
+  if (chan->tme_z8530_chan_rdreg[0] & TME_Z8530_RR0_RX_AVAIL) {
+    switch (chan->tme_z8530_chan_wrreg[1] & TME_Z8530_WR1_RX_INT_MASK) {
+    case TME_Z8530_WR1_RX_INT_DISABLE:
+      break;
+    case TME_Z8530_WR1_RX_INT_1ST_SPCL:
+      ip_rx_set = (receive_first
+		   || _tme_z8530_rx_fifo_special(chan));
+      break;
+    case TME_Z8530_WR1_RX_INT_ALL_SPCL:
+      ip_rx_set = TRUE;
+      break;
+    case TME_Z8530_WR1_RX_INT_SPCL:
+      ip_rx_set = _tme_z8530_rx_fifo_special(chan);
+      break;
+    }
+  }
+
+  /* if the receive Interrupt Pending bit for this channel doesn't
+     have the proper value, update it and callout an int: */
+  if (!ip_rx_set != !(z8530->tme_z8530_rr3 & rr3_ip_rx)) {
+    z8530->tme_z8530_rr3 ^= rr3_ip_rx;
+    return (TME_Z8530_CALLOUT_INT);
+  }
+  return (0);
+}
+
 /* this attempts to refill the receive FIFO: */
 static int
 _tme_z8530_rx_fifo_refill(struct tme_z8530 *z8530,
@@ -1011,6 +1056,7 @@ _tme_z8530_bus_cycle(void *_z8530, struct tme_bus_cycle *cycle_init)
   tme_uint8_t rr3_ip_tx;
   tme_uint8_t rr3_ip_rx;
   tme_uint8_t ius;
+  tme_uint8_t wr1_rx_int_old;
 
   /* recover our data structure: */
   z8530 = (struct tme_z8530 *) _z8530;
@@ -1188,7 +1234,22 @@ _tme_z8530_bus_cycle(void *_z8530, struct tme_bus_cycle *cycle_init)
 
       /* WR1: */
     case 1:
+
+      /* a character already in the receive FIFO when the receive
+	 interrupt mode changes interrupts in the new mode: receive
+	 Character Available is a condition, not an event.  SunOS 2.0
+	 enables keyboard receive interrupts while a keystroke from
+	 the PROM-polled console may still be in the FIFO; without
+	 this, that keystroke is never read, the FIFO is never
+	 refilled, and the keyboard is dead: */
+      wr1_rx_int_old = (chan->tme_z8530_chan_wrreg[1] & TME_Z8530_WR1_RX_INT_MASK);
       chan->tme_z8530_chan_wrreg[1] = value;
+      if ((value & TME_Z8530_WR1_RX_INT_MASK) != wr1_rx_int_old) {
+	new_callouts
+	  |= _tme_z8530_rx_ip_update(z8530, chan,
+				     (wr1_rx_int_old
+				      == TME_Z8530_WR1_RX_INT_DISABLE));
+      }
 
       /* XXX since we fixed the RR3 initialization bug present through
 	 revision 1.9, this may now be unnecessary, and might even
