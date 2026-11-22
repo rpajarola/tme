@@ -81,7 +81,8 @@ _tme_serial_kb_callout(struct tme_serial_kb *serial_kb, int new_callouts)
   int callouts, later_callouts;
   unsigned int ctrl;
   struct tme_serial_config config;
-  tme_uint8_t buffer_input[32], data;
+  tme_uint8_t buffer_input[32], data[TME_SERIAL_KB_EVENT_DATA_MAX];
+  unsigned int data_count;
   tme_serial_data_flags_t data_flags;
   struct tme_keyboard_event event;
   int old_empty;
@@ -278,12 +279,13 @@ _tme_serial_kb_callout(struct tme_serial_kb *serial_kb, int new_callouts)
 	  assert (rc == TME_OK);
 
 	  /* call the type-specific event function to get the serial data: */
-	  data = (*serial_kb->tme_serial_kb_type_event)
-	    (serial_kb, &event);
+	  data_count = (*serial_kb->tme_serial_kb_type_event)
+	    (serial_kb, &event, data);
+	  assert (data_count <= TME_SERIAL_KB_EVENT_DATA_MAX);
 	  
 	  /* add this serial data to our serial buffer: */
 	  tme_serial_buffer_copyin(&serial_kb->tme_serial_kb_serial_buffer,
-				   &data, 1,
+				   data, data_count,
 				   TME_SERIAL_DATA_NORMAL,
 				   TME_SERIAL_COPY_FULL_IS_OVERRUN);
 	}
