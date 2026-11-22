@@ -1,3 +1,26 @@
+2026-11-22  Rico Pajarola  <rp@servium.ch>
+
+	* ic/z8530.c: Recompute the receive Interrupt Pending bit when the
+	receive interrupt mode in WR1 changes, since a character can
+	already be in the receive FIFO.  SunOS 2.0's keyboard was
+	sometimes dead at the miniroot's # prompt.
+
+	* machine/sun/sun-bwtwo.c: Take the copy mode snapshot from the
+	CSR write that enables copy mode, not at the next display update,
+	which lost drawing and left PROM text on the screen.
+
+	* machine/sun2/sun2-mainbus.c: The mbmem and VME DVMA regions end
+	at their last address, not one past it, so a device can be at
+	mbmem 0x40000.
+
+	* machine/sun2/SUN2-MULTIBUS, tmesh/tmesh-config.c, tme/tme.texi:
+	Put the sun-mie memory port at 0x40000.  At 0xa0000 its 256KB
+	cover 0xc0000, where GENERIC SunOS 2.0 kernels find a bwone0.
+
+	* serial/kb-sun.c, serial/serial-kb.c, serial/serial-kb.h: Sun
+	keyboards send IDLE (0x7f) after the last key is released.  The
+	type-specific event function can now return more than one byte.
+
 2026-11-21  Rico Pajarola  <rp@servium.ch>
 
 	* host/eth/slirp/slirp-eth.c, host/eth/slirp/Makefile.am: Add
