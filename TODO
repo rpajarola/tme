@@ -24,17 +24,10 @@ default macOS build), "log zs1 100000" fails with EOPNOTSUPP, which
 macOS prints as "Operation not supported on socket".  say that logging
 isn't compiled in.
 
-sun2: GENERIC SunOS 2.0 kernels find a phantom bwone0 at mbmem 0xc0000
-when the sun-mie memory port is at 0xa0000, since the 256KB port covers
-0xa0000-0xdffff.  put it at 0x40000 instead (0x40000-0x7ffff is free
-now that the mbmem DVMA region ends at 0x3ffff); update the example
-configs and the docs that use 0xa0000.  does sun-mie need to refuse
-or warn about a memory port that covers 0xc0000?
-
-kb-sun: the type 2 and 3 keyboards send IDLE (0x7f) when the last key
-is released, but kb-sun never does.  seen with SunOS 2.0: Shift pressed
-just as the kernel resets the keyboard stays down in the kernel (the
-release arrives after the reset reply), and nothing ever releases it.
+sun-mie: should it warn about a memory port that covers mbmem 0xc0000,
+where GENERIC SunOS 2.0 kernels then find a phantom bwone0?  machine
+windows made before the template moved the port to 0x40000 still have
+it at 0xa0000.
 
 sun4: log when cache and memerr become visible/invisible
 sun4: log when FPU compliance changes
