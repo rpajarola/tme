@@ -149,6 +149,8 @@ _tme_sunbw2_update_debug(struct tme_fb_connection *conn_fb)
 #undef TME_SUNBW2_LO_HEIGHT
 #endif /* TME_SUNBW2_DEBUG */
 
+static void _tme_sunbw2_copy _TME_P((struct tme_sunbw2 *, tme_uint16_t));
+
 /* the sunbw2 CSR bus cycle handler: */
 static int
 _tme_sunbw2_bus_cycle_csr(void *_sunbw2, struct tme_bus_cycle *cycle_init)
@@ -212,6 +214,25 @@ _tme_sunbw2_bus_cycle_csr(void *_sunbw2, struct tme_bus_cycle *cycle_init)
 
   /* set the new CSR value: */
   sunbw2->tme_sunbw2_csr = tme_htobe_u16(csr_new);
+
+  /* if copy mode is being enabled or disabled, or its region is
+     changing, the real board copies exactly the writes made while
+     the region is selected.  finish copying what was written to the
+     old region, and take the snapshot of the new region now, not at
+     the next display update: anything software draws in the new
+     region before then must still reach the framebuffer: */
+  if ((csr_old ^ csr_new)
+      & (TME_SUNBW2_CSR_ENABLE_COPY | TME_SUNBW2_CSR_COPYBASE_MASK)) {
+    if (csr_old & TME_SUNBW2_CSR_ENABLE_COPY) {
+      _tme_sunbw2_copy(sunbw2, csr_old);
+    }
+    if (csr_new & TME_SUNBW2_CSR_ENABLE_COPY) {
+      _tme_sunbw2_copy(sunbw2, csr_new);
+    }
+    else {
+      sunbw2->tme_sunbw2_copy_csr = csr_new;
+    }
+  }
 
   /* if the interrupt signal should change, wake the callout thread: */
   if (!(csr_new & TME_SUNBW2_CSR_INT_ACTIVE)
